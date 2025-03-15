@@ -142,43 +142,42 @@ export class EnvisalinkNetworkScanner {
     /**
      * Check if a port is open on a specific IP address
      */
-    private checkPort(ip: string, port: number): Promise<boolean> {
-        return new Promise<boolean>(resolve => {
+    private async checkPort(ip: string, port: number): Promise<boolean> {
+        return new Promise<boolean>((resolve) => {
             const socket = new net.Socket();
             let resolved = false;
 
-            // Set a timeout to avoid hanging
-            socket.setTimeout(this.connectionTimeout);
+            const cleanup = () => {
+                if (!resolved) {
+                    resolved = true;
+                    socket.removeAllListeners();
+                    socket.destroy();
+                }
+            };
 
-            // Handle successful connection
+            socket.setTimeout(1000);
+
             socket.on('connect', () => {
-                if (!resolved) {
-                    resolved = true;
-                    socket.destroy();
-                    resolve(true);
-                }
+                cleanup();
+                resolve(true);
             });
 
-            // Handle timeout
-            socket.on('timeout', () => {
-                if (!resolved) {
-                    resolved = true;
-                    socket.destroy();
-                    resolve(false);
-                }
-            });
-
-            // Handle errors
             socket.on('error', () => {
-                if (!resolved) {
-                    resolved = true;
-                    socket.destroy();
-                    resolve(false);
-                }
+                cleanup();
+                resolve(false);
             });
 
-            // Attempt to connect
-            socket.connect(port, ip);
+            socket.on('timeout', () => {
+                cleanup();
+                resolve(false);
+            });
+
+            try {
+                socket.connect(port, ip);
+            } catch (error) {
+                cleanup();
+                resolve(false);
+            }
         });
     }
 

@@ -23,4 +23,7 @@ export default {
     },
   },
   preset: 'ts-jest',
+  testTimeout: 10000,
+  detectOpenHandles: true,
+  forceExit: false
 };

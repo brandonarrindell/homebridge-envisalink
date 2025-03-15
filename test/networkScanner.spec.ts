@@ -17,7 +17,8 @@ jest.mock('net', () => {
     setTimeout: jest.fn(),
     on: jest.fn(),
     connect: jest.fn(),
-    destroy: jest.fn()
+    destroy: jest.fn(),
+    removeAllListeners: jest.fn()
   };
   
   return {
@@ -46,8 +47,24 @@ jest.mock('nodealarmproxy', () => {
 });
 
 describe('EnvisalinkNetworkScanner', () => {
+  let mockSocket: any;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    mockSocket = {
+      setTimeout: jest.fn(),
+      on: jest.fn(),
+      connect: jest.fn(),
+      destroy: jest.fn(),
+      removeAllListeners: jest.fn()
+    };
+    ((net.Socket as unknown) as jest.Mock).mockImplementation(() => mockSocket);
+  });
+
+  afterEach(() => {
+    mockSocket.destroy();
+    mockSocket.removeAllListeners();
+    jest.restoreAllMocks();
   });
   
   it('should return empty array when no network interfaces are found', async () => {
@@ -80,11 +97,21 @@ describe('EnvisalinkNetworkScanner', () => {
 });
 
 describe('EnvisalinkHomebridgePlatform Auto-Discovery', () => {
-  let platform: EnvisalinkHomebridgePlatform;
+  let platform: EnvisalinkHomebridgePlatform | null;
   let mockApi: any;
+  let mockSocket: any;
   
   beforeEach(() => {
     jest.clearAllMocks();
+    
+    mockSocket = {
+      setTimeout: jest.fn(),
+      on: jest.fn(),
+      connect: jest.fn(),
+      destroy: jest.fn(),
+      removeAllListeners: jest.fn()
+    };
+    ((net.Socket as unknown) as jest.Mock).mockImplementation(() => mockSocket);
     
     // Create mock API
     mockApi = {
@@ -99,6 +126,16 @@ describe('EnvisalinkHomebridgePlatform Auto-Discovery', () => {
       registerPlatformAccessories: jest.fn(),
       updatePlatformAccessories: jest.fn()
     };
+  });
+
+  afterEach(() => {
+    mockSocket.destroy();
+    mockSocket.removeAllListeners();
+    jest.restoreAllMocks();
+    if (platform) {
+      // Clean up any platform resources
+      platform = null;
+    }
   });
   
   it('should use auto-discovery when host is not provided', async () => {
