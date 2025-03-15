@@ -18,7 +18,7 @@ export class EnvisalinkNetworkScanner {
      */
     async discoverDevices(port: number = this.defaultPort): Promise<string[]> {
         this.log.info(`Starting Envisalink device discovery on port ${port}...`);
-        
+
         // Get all network interfaces
         const networkInterfaces = this.getNetworkInterfaces();
         if (networkInterfaces.length === 0) {
@@ -27,16 +27,16 @@ export class EnvisalinkNetworkScanner {
         }
 
         // Scan each network for devices
-        const discoveryPromises = networkInterfaces.map(networkInfo => 
-            this.scanNetwork(networkInfo.subnet, networkInfo.netmask, port)
+        const discoveryPromises = networkInterfaces.map(networkInfo =>
+            this.scanNetwork(networkInfo.subnet, networkInfo.netmask, port),
         );
 
         // Wait for all scans to complete
         const results = await Promise.all(discoveryPromises);
-        
+
         // Flatten the results and remove duplicates
         const discoveredDevices = [...new Set(results.flat())];
-        
+
         this.log.info(`Discovered ${discoveredDevices.length} Envisalink device(s): ${discoveredDevices.join(', ') || 'none'}`);
         return discoveredDevices;
     }
@@ -44,21 +44,23 @@ export class EnvisalinkNetworkScanner {
     /**
      * Get all suitable network interfaces for scanning
      */
-    private getNetworkInterfaces(): Array<{subnet: string, netmask: string}> {
+    private getNetworkInterfaces(): Array<{subnet: string; netmask: string}> {
         const interfaces = os.networkInterfaces();
-        const results: Array<{subnet: string, netmask: string}> = [];
+        const results: Array<{subnet: string; netmask: string}> = [];
 
         // Process each network interface
         Object.keys(interfaces).forEach(interfaceName => {
             const networkInterface = interfaces[interfaceName];
-            if (!networkInterface) return;
+            if (!networkInterface) {
+                return;
+            }
 
             // Look for IPv4 interfaces that are not internal
             networkInterface.forEach(info => {
                 if (info.family === 'IPv4' && !info.internal) {
                     results.push({
                         subnet: info.address,
-                        netmask: info.netmask
+                        netmask: info.netmask,
                     });
                 }
             });
@@ -74,37 +76,37 @@ export class EnvisalinkNetworkScanner {
         // Calculate the network address and broadcast address
         const ipParts = subnet.split('.').map(part => parseInt(part, 10));
         const maskParts = netmask.split('.').map(part => parseInt(part, 10));
-        
+
         // Calculate network address
         const networkAddress = ipParts.map((part, i) => part & maskParts[i]);
-        
+
         // Calculate broadcast address
         const invertedMask = maskParts.map(part => 255 - part);
         const broadcastAddress = ipParts.map((part, i) => part | invertedMask[i]);
-        
+
         // Calculate the number of hosts in the network
         const numHosts = invertedMask.reduce((acc, part) => acc * (part + 1), 1) - 2;
-        
+
         // If the network is too large, limit the scan to avoid performance issues
         const maxHosts = 256; // Limit to a /24 network
         if (numHosts > maxHosts) {
             this.log.warn(`Network is too large (${numHosts} hosts), limiting scan to ${maxHosts} hosts`);
-            
+
             // Modify the broadcast address to limit the scan
             const limitedBroadcast = [...networkAddress];
             limitedBroadcast[3] = Math.min(networkAddress[3] + maxHosts - 1, 255);
-            
+
             return this.scanIPRange(
-                this.ipToString(networkAddress), 
-                this.ipToString(limitedBroadcast), 
-                port
+                this.ipToString(networkAddress),
+                this.ipToString(limitedBroadcast),
+                port,
             );
         }
-        
+
         return this.scanIPRange(
-            this.ipToString(networkAddress), 
-            this.ipToString(broadcastAddress), 
-            port
+            this.ipToString(networkAddress),
+            this.ipToString(broadcastAddress),
+            port,
         );
     }
 
@@ -115,10 +117,10 @@ export class EnvisalinkNetworkScanner {
         const startIPNum = this.ipToNumber(startIP);
         const endIPNum = this.ipToNumber(endIP);
         const discoveredDevices: string[] = [];
-        
+
         // Create an array of promises for each IP address
         const scanPromises: Promise<void>[] = [];
-        
+
         for (let ipNum = startIPNum + 1; ipNum < endIPNum; ipNum++) {
             const ip = this.numberToIP(ipNum);
             scanPromises.push(
@@ -127,13 +129,13 @@ export class EnvisalinkNetworkScanner {
                         this.log.debug(`Found device at ${ip}:${port}`);
                         discoveredDevices.push(ip);
                     }
-                })
+                }),
             );
         }
-        
+
         // Wait for all scans to complete
         await Promise.all(scanPromises);
-        
+
         return discoveredDevices;
     }
 
@@ -144,10 +146,10 @@ export class EnvisalinkNetworkScanner {
         return new Promise<boolean>(resolve => {
             const socket = new net.Socket();
             let resolved = false;
-            
+
             // Set a timeout to avoid hanging
             socket.setTimeout(this.connectionTimeout);
-            
+
             // Handle successful connection
             socket.on('connect', () => {
                 if (!resolved) {
@@ -156,7 +158,7 @@ export class EnvisalinkNetworkScanner {
                     resolve(true);
                 }
             });
-            
+
             // Handle timeout
             socket.on('timeout', () => {
                 if (!resolved) {
@@ -165,7 +167,7 @@ export class EnvisalinkNetworkScanner {
                     resolve(false);
                 }
             });
-            
+
             // Handle errors
             socket.on('error', () => {
                 if (!resolved) {
@@ -174,7 +176,7 @@ export class EnvisalinkNetworkScanner {
                     resolve(false);
                 }
             });
-            
+
             // Attempt to connect
             socket.connect(port, ip);
         });
@@ -197,7 +199,7 @@ export class EnvisalinkNetworkScanner {
             (num >>> 24) & 255,
             (num >>> 16) & 255,
             (num >>> 8) & 255,
-            num & 255
+            num & 255,
         ].join('.');
     }
 
@@ -207,4 +209,4 @@ export class EnvisalinkNetworkScanner {
     private ipToString(ip: number[]): string {
         return ip.join('.');
     }
-} 
+}

@@ -529,16 +529,16 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
     private async discoverEnvisalinkDevice(port: number): Promise<string | null> {
         const scanner = new EnvisalinkNetworkScanner(this.log);
         const discoveredDevices = await scanner.discoverDevices(port);
-        
+
         if (discoveredDevices.length === 0) {
             return null;
         }
-        
+
         // If multiple devices are found, use the first one
         if (discoveredDevices.length > 1) {
             this.log.warn(`Multiple Envisalink devices found: ${discoveredDevices.join(', ')}. Using the first one: ${discoveredDevices[0]}`);
         }
-        
+
         return discoveredDevices[0];
     }
 }
