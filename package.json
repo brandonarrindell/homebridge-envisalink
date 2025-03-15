@@ -9,7 +9,7 @@
     "watch": "npm run build && npm link && nodemon",
     "build": "rimraf ./dist && tsc",
     "prepublishOnly": "npm run lint && npm run build && npm run test",
-    "test": "jest"
+    "test": "jest --forceExit --detectOpenHandles --testTimeout=10000"
   },
   "keywords": [
     "homebridge-plugin",

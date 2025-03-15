@@ -1,6 +1,5 @@
 # @brandonarrindell/homebridge-envisalink
 
-[![verified-by-homebridge](https://badgen.net/badge/homebridge/verified/purple)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
 [![npm version](https://img.shields.io/npm/v/@brandonarrindell/homebridge-envisalink.svg)](https://www.npmjs.com/package/@brandonarrindell/homebridge-envisalink)
 [![npm downloads](https://img.shields.io/npm/dm/@brandonarrindell/homebridge-envisalink.svg)](https://www.npmjs.com/package/@brandonarrindell/homebridge-envisalink)
 

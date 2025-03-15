@@ -48,9 +48,11 @@ jest.mock('nodealarmproxy', () => {
 
 describe('EnvisalinkNetworkScanner', () => {
   let mockSocket: any;
+  let sockets: any[] = [];
 
   beforeEach(() => {
     jest.clearAllMocks();
+    sockets = [];
     mockSocket = {
       setTimeout: jest.fn(),
       on: jest.fn(),
@@ -58,12 +60,19 @@ describe('EnvisalinkNetworkScanner', () => {
       destroy: jest.fn(),
       removeAllListeners: jest.fn()
     };
-    ((net.Socket as unknown) as jest.Mock).mockImplementation(() => mockSocket);
+    ((net.Socket as unknown) as jest.Mock).mockImplementation(() => {
+      sockets.push(mockSocket);
+      return mockSocket;
+    });
   });
 
   afterEach(() => {
-    mockSocket.destroy();
-    mockSocket.removeAllListeners();
+    // Clean up all sockets
+    sockets.forEach(socket => {
+      socket.destroy();
+      socket.removeAllListeners();
+    });
+    sockets = [];
     jest.restoreAllMocks();
   });
   
@@ -100,9 +109,11 @@ describe('EnvisalinkHomebridgePlatform Auto-Discovery', () => {
   let platform: EnvisalinkHomebridgePlatform | null;
   let mockApi: any;
   let mockSocket: any;
+  let sockets: any[] = [];
   
   beforeEach(() => {
     jest.clearAllMocks();
+    sockets = [];
     
     mockSocket = {
       setTimeout: jest.fn(),
@@ -111,7 +122,10 @@ describe('EnvisalinkHomebridgePlatform Auto-Discovery', () => {
       destroy: jest.fn(),
       removeAllListeners: jest.fn()
     };
-    ((net.Socket as unknown) as jest.Mock).mockImplementation(() => mockSocket);
+    ((net.Socket as unknown) as jest.Mock).mockImplementation(() => {
+      sockets.push(mockSocket);
+      return mockSocket;
+    });
     
     // Create mock API
     mockApi = {
@@ -128,10 +142,15 @@ describe('EnvisalinkHomebridgePlatform Auto-Discovery', () => {
     };
   });
 
-  afterEach(() => {
-    mockSocket.destroy();
-    mockSocket.removeAllListeners();
+  afterEach(async () => {
+    // Clean up all sockets
+    sockets.forEach(socket => {
+      socket.destroy();
+      socket.removeAllListeners();
+    });
+    sockets = [];
     jest.restoreAllMocks();
+    
     if (platform) {
       // Clean up any platform resources
       platform = null;
