@@ -9,14 +9,17 @@ choice.  Sensors can also be used for automations (i.e. turn on light when door 
 This plugin has been tested with both Envisalink 3 and Envisalink 4. Envisalink 3 firmware
 should be upgraded to 1.12.182 or higher.
 
-##Installation
+## Installation
 Example configuration is below.  See [config.schema.json](./blob/master/config.schema.json) for more info, including valid values.
 
 ```javascript
  "platforms": [
     {
       "platform": "Envisalink",
-      "host": "192.168.0.XXX",
+      /* Host is optional if enableAutoDiscovery is true */
+      "host": "192.168.0.XXX", 
+      /* Automatically discover Envisalink devices on the network */
+      "enableAutoDiscovery": true, 
       "deviceType": "DSC",
       "password": "---envisalink password (default is user)---",
       "pin": "---panel pin for disarming---",
@@ -82,6 +85,22 @@ Example configuration is below.  See [config.schema.json](./blob/master/config.s
     }
   ]
 ```
+
+## Auto-Discovery Feature
+
+This plugin now supports automatic discovery of Envisalink devices on your network. To use this feature:
+
+1. Set `enableAutoDiscovery` to `true` in your config (this is the default)
+2. You can omit the `host` parameter if you want to rely solely on auto-discovery
+3. If multiple Envisalink devices are found on your network, the first one discovered will be used
+
+Auto-discovery works by scanning your local network for devices with port 4025 open (the default Envisalink port). This can be useful if:
+
+- You don't know the IP address of your Envisalink device
+- Your Envisalink device's IP address changes frequently
+- You're setting up the plugin for the first time
+
+If auto-discovery fails or you prefer to specify the IP address manually, you can still provide the `host` parameter in your config.
 
 ## Password
 

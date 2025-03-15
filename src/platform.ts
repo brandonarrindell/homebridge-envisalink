@@ -24,6 +24,7 @@ import {EnvisalinkPartitionAccessory} from './partitionAccessory';
 import {NodeAlarmProxy, PartitionUpdate, ZoneUpdate} from './nodeAlarmProxyTypes';
 import {EnvisalinkPanicAccessory} from './panicAccessory';
 import {EnvisalinkCustomCommandAccessory} from './customCommandAccessory';
+import {EnvisalinkNetworkScanner} from './networkScanner';
 import envisalinkCodes = require('nodealarmproxy/envisalink.js');
 import * as util from 'util';
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -64,8 +65,8 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
         this.alarm = undefined;
         this.zoneConfigs = new Map();
 
-        if (!co || !co.host || !co.password || !co.pin) {
-            this.log.warn('Platform will be skipped because config is missing host, password, and/or pin.');
+        if (!co || !co.password || !co.pin) {
+            this.log.warn('Platform will be skipped because config is missing password and/or pin.');
             return;
         }
 
@@ -86,7 +87,30 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
         this.api.on('didFinishLaunching', async () => {
             log.debug('Executed didFinishLaunching callback');
 
-            this.log.info(`Configuring Envisalink platform,  Host: ${co.host} Port: ${co.port}`);
+            // If host is not provided and auto-discovery is enabled, try to discover the device
+            if (!co.host && co.enableAutoDiscovery !== false) {
+                try {
+                    const discoveredHost = await this.discoverEnvisalinkDevice(co.port || 4025);
+                    if (discoveredHost) {
+                        co.host = discoveredHost;
+                        this.log.info(`Auto-discovered Envisalink device at ${co.host}`);
+                    } else {
+                        this.log.error('No Envisalink devices found on the network. Please specify the host manually.');
+                        return;
+                    }
+                } catch (error) {
+                    this.log.error('Error during auto-discovery:', error);
+                    this.log.error('Please specify the host manually.');
+                    return;
+                }
+            }
+
+            if (!co.host) {
+                this.log.error('No host specified and auto-discovery is disabled. Please specify the host manually.');
+                return;
+            }
+
+            this.log.info(`Configuring Envisalink platform, Host: ${co.host} Port: ${co.port}`);
 
             try {
                 await this.resetConnection(null);
@@ -497,5 +521,24 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
         } else {
             this.log.debug(`Command ${command} succeeded.`);
         }
+    }
+
+    /**
+     * Discover Envisalink device on the network
+     */
+    private async discoverEnvisalinkDevice(port: number): Promise<string | null> {
+        const scanner = new EnvisalinkNetworkScanner(this.log);
+        const discoveredDevices = await scanner.discoverDevices(port);
+        
+        if (discoveredDevices.length === 0) {
+            return null;
+        }
+        
+        // If multiple devices are found, use the first one
+        if (discoveredDevices.length > 1) {
+            this.log.warn(`Multiple Envisalink devices found: ${discoveredDevices.join(', ')}. Using the first one: ${discoveredDevices[0]}`);
+        }
+        
+        return discoveredDevices[0];
     }
 }

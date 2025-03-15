@@ -7,8 +7,15 @@
       "host": {
         "title": "Host/IP Address",
         "type": "string",
-        "required": true,
-        "description": "IP Address of Envisalink device. Should be static or DHCP-reserved"
+        "required": false,
+        "description": "IP Address of Envisalink device. Should be static or DHCP-reserved. If not provided, auto-discovery will be used."
+      },
+      "enableAutoDiscovery": {
+        "title": "Enable Auto-Discovery",
+        "type": "boolean",
+        "required": false,
+        "description": "Automatically discover Envisalink devices on the network. If enabled and no devices are found, you'll need to specify the host manually.",
+        "default": true
       },
       "password": {
         "title": "Envisalink Password",

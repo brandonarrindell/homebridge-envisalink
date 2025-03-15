@@ -25,7 +25,8 @@ export type CustomCommandConfig = {
 };
 
 export type EnvisalinkConfig = {
-    host: string;
+    host?: string;
+    enableAutoDiscovery?: boolean;
     password: string;
     port: number;
     proxyPort: number;
