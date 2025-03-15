@@ -1,28 +1,67 @@
-# homebridge-envisalink
+# @brandonarrindell/homebridge-envisalink
+
 [![verified-by-homebridge](https://badgen.net/badge/homebridge/verified/purple)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
-[![NPM Version](https://img.shields.io/npm/v/homebridge-envisalink.svg)](https://www.npmjs.com/package/homebridge-envisalink)
+[![npm version](https://img.shields.io/npm/v/@brandonarrindell/homebridge-envisalink.svg)](https://www.npmjs.com/package/@brandonarrindell/homebridge-envisalink)
+[![npm downloads](https://img.shields.io/npm/dm/@brandonarrindell/homebridge-envisalink.svg)](https://www.npmjs.com/package/@brandonarrindell/homebridge-envisalink)
 
-This Homebridge plugin adds an Envisalink panel and its sensors into HomeKit.
-Alarm Panel can be armed (home/away) or disarmed by using Siri or the HomeKit app of your
-choice.  Sensors can also be used for automations (i.e. turn on light when door opens).
+> A maintained fork of [homebridge-envisalink](https://github.com/dustindclark/homebridge-envisalink) (v1.2.10) with enhanced features and Homebridge 2.0 support.
 
-This plugin has been tested with both Envisalink 3 and Envisalink 4. Envisalink 3 firmware
-should be upgraded to 1.12.182 or higher.
+This Homebridge plugin integrates your Envisalink security system with HomeKit, allowing you to:
+- Control your alarm panel (arm/disarm) using Siri or any HomeKit app
+- Monitor sensors for automations (e.g., turn on lights when doors open)
+- Trigger panic buttons (police, fire, ambulance) from HomeKit
+- Auto-discover Envisalink devices on your network
+
+## Version History
+
+This fork continues from version 1.2.10 of the original plugin:
+
+- v1.3.0 - First release of the fork
+  - Added Homebridge 2.0 support
+  - Added auto-discovery feature
+  - Improved stability and error handling
+  - TypeScript rewrite
+
+For earlier version history, see the [original repository](https://github.com/dustindclark/homebridge-envisalink).
+
+## Features
+
+✨ **What's New in This Fork**
+- Full Homebridge 2.0 compatibility
+- Automatic discovery of Envisalink devices
+- Improved stability and error handling
+- Regular updates and maintenance
+- TypeScript rewrite for better reliability
+
+🔒 **Core Features**
+- Support for both Envisalink 3 and 4
+- DSC and Honeywell panel support
+- Zone monitoring (doors, windows, motion, smoke, leak sensors)
+- Multiple partition support
+- Custom command support
+- Chime control
+- Panic buttons
 
 ## Installation
-Example configuration is below.  See [config.schema.json](./blob/master/config.schema.json) for more info, including valid values.
 
-```javascript
- "platforms": [
+```bash
+npm install -g @brandonarrindell/homebridge-envisalink
+```
+
+## Configuration
+
+Add to your Homebridge config.json:
+
+```json
+{
+  "platforms": [
     {
       "platform": "Envisalink",
-      /* Host is optional if enableAutoDiscovery is true */
-      "host": "192.168.0.XXX", 
-      /* Automatically discover Envisalink devices on the network */
-      "enableAutoDiscovery": true, 
+      "enableAutoDiscovery": true,
+      "host": "192.168.0.XXX",  // Optional if enableAutoDiscovery is true
       "deviceType": "DSC",
-      "password": "---envisalink password (default is user)---",
-      "pin": "---panel pin for disarming---",
+      "password": "YOUR_PASSWORD",  // Default is "user"
+      "pin": "YOUR_PANEL_PIN",
       "suppressZoneAccessories": false,
       "suppressClockReset": false,
       "ambulancePanic": {
@@ -39,7 +78,7 @@ Example configuration is below.  See [config.schema.json](./blob/master/config.s
       },
       "partitions": [
         {
-          "name": "Alarm",
+          "name": "Main Alarm",
           "enableChimeSwitch": true,
           "pin": "1243"
         }
@@ -54,121 +93,116 @@ Example configuration is below.  See [config.schema.json](./blob/master/config.s
           "name": "Master Bedroom Door",
           "type": "door",
           "partition": 1
-        },
-        {
-          "name": "Downstairs Windows",
-          "type": "window",
-          "partition": 1
-        },
-        {
-          "name": "Basement Leak",
-          "type": "leak",
-          "partition": 1
-        },
-        {
-          "name": "Upstairs Smoke",
-          "type": "smoke",
-          "partition": 1
-        },
-        {
-          "name": "Living Room Motion",
-          "type": "motion",
-          "partition": 1
-        }
-      ],
-      "customCommands": [
-        {
-          "name": "System Test",
-          "command": "071*600004"
         }
       ]
     }
   ]
+}
 ```
 
-## Auto-Discovery Feature
+### Configuration Options
 
-This plugin now supports automatic discovery of Envisalink devices on your network. To use this feature:
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| enableAutoDiscovery | boolean | true | Automatically discover Envisalink devices |
+| host | string | - | IP address of Envisalink (optional with auto-discovery) |
+| deviceType | string | "DSC" | Panel type ("DSC" or "Honeywell") |
+| password | string | "user" | Envisalink web interface password |
+| pin | string | - | Alarm panel PIN for disarming |
+| suppressZoneAccessories | boolean | false | Hide zone accessories in HomeKit |
+| suppressClockReset | boolean | false | Disable hourly panel clock sync |
 
-1. Set `enableAutoDiscovery` to `true` in your config (this is the default)
-2. You can omit the `host` parameter if you want to rely solely on auto-discovery
-3. If multiple Envisalink devices are found on your network, the first one discovered will be used
+See [config.schema.json](./config.schema.json) for full configuration options.
 
-Auto-discovery works by scanning your local network for devices with port 4025 open (the default Envisalink port). This can be useful if:
+## Auto-Discovery
 
-- You don't know the IP address of your Envisalink device
-- Your Envisalink device's IP address changes frequently
-- You're setting up the plugin for the first time
+The auto-discovery feature scans your network for Envisalink devices:
 
-If auto-discovery fails or you prefer to specify the IP address manually, you can still provide the `host` parameter in your config.
+1. Enable with `enableAutoDiscovery: true`
+2. Omit `host` to use auto-discovery exclusively
+3. First discovered device will be used
+4. Manual `host` configuration takes precedence
 
-## Password
+## Advanced Features
 
-The password field is the password you use to login to the Envislink locally.
-In order the find/change this password, access the IP address of your Envisalink in a browser.
-The password that you use to login is the password that should be used here. Default is 'user'
-but should be changed in settings for security.
+### Home vs. Night Arm Modes
 
-## Home vs. Night
-DSC does not distinguish between these 2 arm modes that are provided in HomeKit. The behavior of the plugin
-(as of 1.1.0) is as follows:
+- **Home**: Arms in stay mode with entry delay
+- **Night**: Arms in stay mode with no entry delay (instant alarm)
 
-- *Home*: Arm to stay with entry delay.
-- *Night*: Arm to stay with no entry delay (if any door is opened, alarm will immediately sound)
+### Non-Sequential Zones
 
-## Advanced Config
-### Disabling Clock Reset
-This plugin will update the date/time of your alarm system hourly unless you set "suppressClockReset" to true in the config.
+For systems with gaps in zone numbering:
 
-### Non-Consecutive Zones
-If your system has unused zones, simply include a *zoneNumber* integer property on ***each*** zone you have in the config. Make sure you put the property on each zone.
-
-Ex:
-```javascript
-...
-"zones": [
-  {
-    "name": "Front Entry",
-    "type": "door",
-    "partition": 1,
-    "zoneNumber": 1
-  },
-  {
-    "name": "Patio Door",
-    "type": "door",
-    "partition": 1,
-    "zoneNumber": 2
-  },
-  {
-    "name": "Garage Door",
-    "type": "door",
-    "partition": 1,
-    "zoneNumber": 5
-  }
-]
-...
+```json
+{
+  "zones": [
+    {
+      "name": "Front Door",
+      "type": "door",
+      "partition": 1,
+      "zoneNumber": 1
+    },
+    {
+      "name": "Garage Door",
+      "type": "door",
+      "partition": 1,
+      "zoneNumber": 5
+    }
+  ]
+}
 ```
 
 ### Custom Commands
-See documentation in "docs" folder for crafting a custom command. Examples above are real DSC commands. Checksum will the added automatically. Do not suffix with checksum.
-<br />
 
-**Note**: I have only tested with DSC panels. This should work with Honeywell devices since the Envisalink API is the same, but this has not been tested. 
+Add custom panel commands:
 
-### PINs
-By default, all partitions use the same top level PIN. You can override this PIN at the partition level config. 
+```json
+{
+  "customCommands": [
+    {
+      "name": "System Test",
+      "command": "071*600004"
+    }
+  ]
+}
+```
 
-## Debugging
-Connectivity issues may manifest themselves in different ways. There are generally several common issues in connecting to your Envisalink device:
+## Troubleshooting
 
-### Connectivity Issues
-- **Multiple clients connecting to Envisalink -** Only one socket connection is supported at a time. This is an Envisalink limitation. Disconnect any other devices, and restart Homebridge. If you need other devices connected, use the proxy feature provided by this plugin.
-- **Connectivity flakiness -** Ideally, both your Envisalink and your Homebridge should be on wired connections.
-- **IP Address Changes -** Your Envisalink should have a static or DHCP reserved private IP address within your home network.
-- **Password Issues -** Your configured password is incorrect.
+### Common Issues
 
-To troubleshoot, set `enableVerboseLogging` config to true. This should reveal actual error messages.
+1. **Connection Problems**
+   - Only one socket connection allowed at a time
+   - Use wired connections when possible
+   - Set static IP for Envisalink
+   - Verify password is correct
+
+2. **Debug Mode**
+   ```json
+   {
+     "platforms": [
+       {
+         "platform": "Envisalink",
+         "enableVerboseLogging": true
+       }
+     ]
+   }
+   ```
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
 
 ## Credits
-This plugin leverages [Node Alarm Proxy](https://www.npmjs.com/package/nodealarmproxy)
-in order to HomeKit/HomeBridge enable the Envisalink device.
+
+- Original plugin by [Dustin D. Clark](https://github.com/dustindclark)
+- Built on [Node Alarm Proxy](https://www.npmjs.com/package/nodealarmproxy)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
