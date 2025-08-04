@@ -2,7 +2,7 @@ import {PlatformConfig} from 'homebridge';
 import {ZoneType} from './types';
 
 export type PartitionConfig = {
-    name: string;
+    name?: string;
     enableChimeSwitch?: boolean;
     pin?: string;
 };
@@ -27,6 +27,7 @@ export type CustomCommandConfig = {
 export type EnvisalinkConfig = {
     host?: string;
     enableAutoDiscovery?: boolean;
+    name?: string;
     password: string;
     port: number;
     proxyPort: number;

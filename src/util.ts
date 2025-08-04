@@ -55,8 +55,9 @@ export const transformPartitionStatus = (partitionConfigs: ReadonlyArray<Partiti
     const chimeEnabled: boolean | undefined = statusCode === EnvisalinkStatusCode.ChimeEnabled ? true
         : statusCode === EnvisalinkStatusCode.ChimeDisabled ? false
             : undefined;
+    const partitionName = partitionConfig.name || `Partition ${number}`;
     return {
-        name: partitionConfig.name,
+        name: partitionName,
         number: number,
         enableChimeSwitch: partitionConfig.enableChimeSwitch || false,
         chimeCommand: `071${number}*4`,
