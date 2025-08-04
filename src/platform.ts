@@ -59,11 +59,16 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
         public readonly config: PlatformConfig,
         public readonly api: HomebridgeAPI,
     ) {
-        this.log.debug('Finished initializing platform:', this.config.name);
+        this.log.debug('Finished initializing platform:', this.getConfig().name || this.config.name || 'Envisalink');
 
         const co = this.getConfig();
         this.alarm = undefined;
         this.zoneConfigs = new Map();
+
+        // Validate platform name - missing name causes warning
+        if (!co.name && !this.config.name) {
+            this.log.warn('Platform configuration is missing a name attribute. Using default name "Envisalink".');
+        }
 
         if (!co || !co.password || !co.pin) {
             this.log.warn('Platform will be skipped because config is missing password and/or pin.');
@@ -73,6 +78,15 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
         if (!co.partitions || co.partitions.length === 0) {
             this.log.warn('Platform will be skipped partitions were not configured.');
             return;
+        }
+
+        // Validate partition names - missing names can cause failures
+        for (let i = 0; i < co.partitions.length; i++) {
+            const partition = co.partitions[i];
+            if (!partition.name) {
+                this.log.warn(`Partition ${i + 1} is missing a name attribute. Using default name "Partition ${i + 1}".`);
+                this.log.warn('Missing partition names can cause plugin failures. Please add name attributes to your partition configurations.');
+            }
         }
 
         if (!co.zones || co.zones.length === 0) {
