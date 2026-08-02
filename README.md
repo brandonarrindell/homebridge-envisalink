@@ -154,18 +154,26 @@ For systems with gaps in zone numbering:
 
 ### Custom Commands
 
-Add custom panel commands:
+Add custom panel commands. Each `command` is sent to the EnvisaLink as a raw TPI command string — it is **not** just a keypad code. To simulate a keystroke sequence on a specific partition (arming variants, bypass, etc.), use TPI command `071` (Send Keystring) followed by the partition number and then the keys, e.g. `071<partition><keys>`:
 
 ```json
 {
   "customCommands": [
     {
       "name": "System Test",
-      "command": "071*600004"
+      "command": "0711*600004"
+    },
+    {
+      "name": "Instant Arm (Away)",
+      "command": "0711*9XXXX"
     }
   ]
 }
 ```
+
+`Instant Arm (Away)` above simulates pressing `*9` plus a 4-digit alarm code on partition 1 (replace `XXXX` with your code) — the DSC instant-arm sequence.
+
+A command missing the `071<partition>` prefix (e.g. just `*9XXXX`) will be rejected by the panel with a `Bad Checksum Received` error, since it is not a valid standalone TPI packet.
 
 ## Troubleshooting
 
