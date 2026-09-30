@@ -45,6 +45,15 @@ ranges, so HTTP client connections do not claim a bridge's port between restarts
   `502024` failure logging/reset, and a successful command after that failure
 - Actual process restarts with the same Homebridge `persist` and `accessories`
   directories, rather than simulated lifecycle callbacks
+- `PLUGIN_NAME` equals the package name used by Homebridge; all fresh accessory
+  cache entries have the scoped plugin/platform association and registration
+  emits no "no loaded plugin" warning
+- Synthetic legacy unscoped associations across every accessory type migrate
+  through Homebridge's own platform resolution on main and child bridges,
+  preserve UUIDs and HAP AIDs/IIDs, and persist the scoped association; restored
+  sensors, partition controls, panic switches and custom commands still work
+- Adding/removing commands after that migration survives process restarts without
+  duplicate accessories, stale cache entries or repeated association migration
 - Legacy custom-command cache entries with empty context; name-only changes
   preserve command-derived UUID and HomeKit AID and update both visible names
 - Command edits remove the old accessory; deleting entries removes their stale
@@ -78,6 +87,9 @@ claiming that HomeKit receives a failure status.
 npm run build
 node --test --test-name-pattern='names:' test/e2e/homebridge.test.cjs
 
+# Focused registration and legacy plugin-association migration regressions.
+node --test --test-name-pattern='registration:' test/e2e/homebridge.test.cjs
+
 # Fast restart/cache iteration. Reports reconnect as skipped.
 E2E_SKIP_RECONNECT=1 npm run test:e2e
 
@@ -100,6 +112,8 @@ package metadata, accommodating both Homebridge 1.x and 2.x entrypoint names.
 `HOMEBRIDGE_BIN` must be an absolute path. Failure artifacts are retained and their
 temporary directory is printed. Successful runs remove their own temporary
 storage unless `E2E_KEEP_STORAGE=1` is set. No production cache is touched.
+CI runs the complete suite against Homebridge 1.11.4 and 2.4.0 on Node 22 and 24,
+plus the supported Homebridge 1.6.0 / Node 22.0.0 runtime floor.
 
 ### Restricted containers
 
