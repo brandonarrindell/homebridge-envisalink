@@ -25,6 +25,6 @@ export default {
   preset: 'ts-jest',
   testTimeout: 10000,
   detectOpenHandles: true,
-  forceExit: true,
+  testMatch: ['**/test/**/*.spec.ts'],
   verbose: true
 };

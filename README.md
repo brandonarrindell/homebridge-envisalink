@@ -15,6 +15,9 @@ This Homebridge plugin integrates your Envisalink security system with HomeKit, 
 
 This fork continues from version 1.2.10 of the original plugin:
 
+- v2.0.0 (unreleased) - Node.js 22/24 support, custom-command cache cleanup,
+  dependency refresh, and simulated end-to-end tests. **Breaking runtime change:**
+  see [migration and release notes](RELEASE_NOTES.md).
 - v1.3.0 - First release of the fork
   - Added Homebridge 2.0 support
   - Added auto-discovery feature
@@ -34,7 +37,7 @@ For earlier version history, see the [original repository](https://github.com/du
 
 🔒 **Core Features**
 - Support for both Envisalink 3 and 4
-- DSC and Honeywell panel support
+- DSC panel support (the current transport does not implement Honeywell TPI)
 - Zone monitoring (doors, windows, motion, smoke, leak sensors)
 - Multiple partition support
 - Custom command support
@@ -188,6 +191,37 @@ Add custom panel commands:
      ]
    }
    ```
+
+## Custom command changes
+
+Custom command identities remain based on their command string for compatibility
+with existing HomeKit installations. Renaming a command preserves its accessory.
+Editing its command string replaces that accessory and removes the old tile;
+HomeKit room assignments and automations referencing the old command may need to
+be updated. Removing commands (including clearing or omitting `customCommands`)
+removes their cached accessories on the next successful platform startup.
+Previously orphaned command switches are recognized from their persisted serial
+number and matching UUID, without deleting unrelated accessories.
+
+## Development and testing
+
+Use Node.js 22.13+ or 24 for development tooling, then run:
+
+```sh
+npm ci
+npm run check
+```
+
+`npm test` runs both unit tests and real Homebridge-process tests against a local
+simulated DSC EnvisaLink TCP panel. No alarm hardware, Home app pairing, or real
+alarm credentials are needed. The simulator binds only to loopback and uses
+temporary Homebridge storage. See [the testing guide](docs/testing.md) for protocol
+sources, coverage, runtime overrides, and important simulation limits.
+
+Version 2 requires Node.js 22 or 24. CI runs the simulator against Homebridge 1
+and 2 on both Node versions, and checks the Homebridge 1.6 API floor on Node 22.0.0.
+Upgrade older Node installations before installing version 2; see the
+[migration notes](RELEASE_NOTES.md). The Homebridge engine range is unchanged.
 
 ## Contributing
 

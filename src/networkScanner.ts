@@ -174,7 +174,7 @@ export class EnvisalinkNetworkScanner {
 
             try {
                 socket.connect(port, ip);
-            } catch (error) {
+            } catch {
                 cleanup();
                 resolve(false);
             }

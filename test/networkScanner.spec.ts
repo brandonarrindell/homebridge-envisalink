@@ -51,6 +51,7 @@ describe('EnvisalinkNetworkScanner', () => {
   let sockets: any[] = [];
 
   beforeEach(() => {
+    jest.useFakeTimers();
     jest.clearAllMocks();
     sockets = [];
     mockSocket = {
@@ -73,6 +74,8 @@ describe('EnvisalinkNetworkScanner', () => {
       socket.removeAllListeners();
     });
     sockets = [];
+    jest.clearAllTimers();
+    jest.useRealTimers();
     jest.restoreAllMocks();
   });
   
@@ -112,6 +115,7 @@ describe('EnvisalinkHomebridgePlatform Auto-Discovery', () => {
   let sockets: any[] = [];
   
   beforeEach(() => {
+    jest.useFakeTimers();
     jest.clearAllMocks();
     sockets = [];
     
@@ -149,6 +153,8 @@ describe('EnvisalinkHomebridgePlatform Auto-Discovery', () => {
       socket.removeAllListeners();
     });
     sockets = [];
+    jest.clearAllTimers();
+    jest.useRealTimers();
     jest.restoreAllMocks();
     
     if (platform) {
