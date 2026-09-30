@@ -1,3 +1,42 @@
+# 2.0.1 — 2026-09-30
+
+## Fixed
+
+- Publish partitions with numbered fallback names when their configured names
+  are missing, empty or whitespace (issue #45)
+- Normalize accessory and service names using current HAP Unicode and
+  punctuation rules, including trailing-space names such as `Smoke detector `
+  (issue #74)
+- Repair restored accessory, Accessory Information, service and existing
+  ConfiguredName values while preserving UUIDs, HomeKit AIDs and panel commands
+- Apply the platform-name fallback and expose its supported configuration field
+- Persist repaired names on the Homebridge 1.6 compatibility floor as well as
+  current Homebridge 1 and 2 releases
+
+## Upgrading
+
+Set a valid platform `name`, such as `"name": "Envisalink"`, or an explicit
+`_bridge.name` when using a child bridge. Homebridge selects the child-bridge name
+before constructing the plugin, so the plugin's runtime fallback cannot repair
+the preselected scoped-package default. Keep the existing bridge username,
+settings and accessory cache to preserve HomeKit identity.
+
+Homebridge may emit invalid-name warnings while deserializing an old cache before
+plugin callbacks run. The plugin repairs and saves those names; the next restart
+uses the repaired cache. Apple Home's own cached labels and pairing UI are outside
+the simulated tests.
+
+The Node.js 22/24 requirement introduced in 2.0.0 is unchanged.
+
+## Verification
+
+Real Homebridge-process, simulated DSC TCP panel and HAP HTTP tests cover absent
+and malformed names, legacy cache upgrades, main and child bridges, actual
+restarts, stable identities and restored controls across every accessory type.
+They include the production 60-second reconnect delay and the Homebridge 1.6 /
+Node 22.0.0 compatibility floor. Test-port selection uses Node's uniform
+`crypto.randomInt` API. See [testing documentation](docs/testing.md) for scope.
+
 # 2.0.0 — 2026-09-30
 
 ## Breaking change: Node.js 22 or 24 required
