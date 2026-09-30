@@ -19,12 +19,14 @@ export class EnvisalinkCustomCommandAccessory {
     ) {
         const infoService = this.accessory.getService(this.platform.Service.AccessoryInformation);
         if (infoService) {
-            infoService.setCharacteristic(this.platform.Characteristic.Manufacturer, MANUFACTURER)
+            infoService.setCharacteristic(this.platform.Characteristic.Name, this.name)
+                .setCharacteristic(this.platform.Characteristic.Manufacturer, MANUFACTURER)
                 .setCharacteristic(this.platform.Characteristic.Model, MODEL)
                 .setCharacteristic(this.platform.Characteristic.SerialNumber, command);
         }
         this.service = this.accessory.getService(this.platform.Service.Switch) ||
             this.accessory.addService(this.platform.Service.Switch, this.name);
+        this.service.setCharacteristic(this.platform.Characteristic.Name, this.name);
         this.service.getCharacteristic(this.platform.Characteristic.On)
             .onSet(this.invokeCommand.bind(this));
         this.service.updateCharacteristic(this.platform.Characteristic.On,

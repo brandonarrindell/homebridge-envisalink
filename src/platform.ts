@@ -27,7 +27,6 @@ import {EnvisalinkCustomCommandAccessory} from './customCommandAccessory';
 import {EnvisalinkNetworkScanner} from './networkScanner';
 import envisalinkCodes = require('nodealarmproxy/envisalink.js');
 import * as util from 'util';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const packageJSON = require('../package.json');
 export const REPORT_ERROR_TXT = '\nPlease report all bugs at ' + packageJSON.bugs.url + '\n';
 
@@ -202,26 +201,53 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
     }
 
     discoverCustomCommandAccessories() {
-        if (!this.getConfig().customCommands || this.getConfig().customCommands.length === 0) {
-            this.log.debug('No custom commands configured.');
-            return;
-        }
-        this.getConfig().customCommands.forEach(customCommand => {
+        // Keep the established command-derived identity so existing HomeKit rooms and
+        // automations survive upgrades and name-only changes.
+        const configuredUUIDs = new Set<string>();
+        for (const customCommand of this.getConfig().customCommands || []) {
             const uuid = this.api.hap.uuid.generate(`envisalink.customCommand.${customCommand.command}`);
+            if (configuredUUIDs.has(uuid)) {
+                this.log.warn('Ignoring duplicate custom command:', customCommand.name);
+                continue;
+            }
+            configuredUUIDs.add(uuid);
             let accessory = this.accessories.get(uuid);
             if (accessory) {
                 this.log.debug('Restoring existing custom command accessory from cache:', accessory.displayName);
                 accessory.displayName = customCommand.name;
-                this.api.updatePlatformAccessories([accessory]);
+                accessory.context.type = 'customCommand';
                 new EnvisalinkCustomCommandAccessory(this, accessory, customCommand.name, customCommand.command);
+                this.api.updatePlatformAccessories([accessory]);
             } else {
                 this.log.debug('Adding new custom command accessory because accessory was not restored from cache.');
                 accessory = new this.api.platformAccessory(customCommand.name, uuid);
+                accessory.context.type = 'customCommand';
                 this.accessories.set(uuid, accessory);
                 new EnvisalinkCustomCommandAccessory(this, accessory, customCommand.name, customCommand.command);
                 this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
             }
-        });
+        }
+
+        // Reconcile even when the list is empty or omitted. Older versions did not
+        // mark their context, but did persist the command as SerialNumber. Verify
+        // the exact UUID scheme as well as the service before treating one as ours.
+        for (const [uuid, accessory] of this.accessories) {
+            if (!configuredUUIDs.has(uuid) && this.isCustomCommandAccessory(accessory)) {
+                this.log.info('Removing custom command accessory no longer configured:', accessory.displayName);
+                this.api.unregisterPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
+                this.accessories.delete(uuid);
+            }
+        }
+    }
+
+    private isCustomCommandAccessory(accessory: PlatformAccessory): boolean {
+        if (accessory.context.type === 'customCommand') {
+            return true;
+        }
+        const info = accessory.getService(this.Service.AccessoryInformation);
+        const command = info?.getCharacteristic(this.Characteristic.SerialNumber).value;
+        return typeof command === 'string' && !!accessory.getService(this.Service.Switch) &&
+            accessory.UUID === this.api.hap.uuid.generate(`envisalink.customCommand.${command}`);
     }
 
     discoverPanicAccessories() {

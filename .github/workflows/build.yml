@@ -1,31 +1,46 @@
-name: Build and Lint
+name: Build, unit tests and simulated E2E
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
-
     strategy:
+      fail-fast: false
       matrix:
-        # the Node.js versions to build on
-        node-version: [12.x, 13.x, 14.x, 15.x, 16.x]
-
+        node: [22, 24]
+        homebridge: ['1.11.4', '2.4.0']
+        include:
+          # Current tooling with the oldest supported Node and Homebridge API.
+          - node: 24
+            homebridge: '1.6.0'
+            runtime-node: '22.0.0'
     steps:
-      - uses: actions/checkout@v2
-
-      - name: Use Node.js ${{ matrix.node-version }} 
-        uses: actions/setup-node@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-
-      - name: Install dependencies
-        run: npm install
-
-      - name: Lint the project
-        run: npm run lint
-
-      - name: Build the project
-        run: npm run build
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run test:unit
+      - name: Install isolated Homebridge test runtime
         env:
-          CI: true
+          HOMEBRIDGE_VERSION: ${{ matrix.homebridge }}
+          RUNTIME_NODE: ${{ matrix.runtime-node }}
+        run: |
+          npm install --prefix "$RUNNER_TEMP/envisalink-runtime" --no-package-lock --no-save "homebridge@$HOMEBRIDGE_VERSION"
+          HB_DIR="$RUNNER_TEMP/envisalink-runtime/node_modules/homebridge"
+          echo "HOMEBRIDGE_BIN=$HB_DIR/$(node -p "require('$HB_DIR/package.json').bin.homebridge")" >> "$GITHUB_ENV"
+          if [ -n "$RUNTIME_NODE" ]; then
+            npm install --prefix "$RUNNER_TEMP/envisalink-node" --no-package-lock --no-save "node@$RUNTIME_NODE"
+            echo "HOMEBRIDGE_NODE=$RUNNER_TEMP/envisalink-node/node_modules/node/bin/node" >> "$GITHUB_ENV"
+          fi
+      - name: Real Homebridge and simulated DSC TCP panel
+        run: npm run test:e2e
+        timeout-minutes: 8
+      - name: Production dependency audit
+        run: npm audit --omit=dev --audit-level=high

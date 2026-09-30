@@ -1,0 +1,374 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const { spawn } = require('node:child_process');
+const { randomBytes } = require('node:crypto');
+const fs = require('node:fs/promises');
+const fsSync = require('node:fs');
+const http = require('node:http');
+const net = require('node:net');
+const os = require('node:os');
+const path = require('node:path');
+const { test } = require('node:test');
+const { setTimeout: delay } = require('node:timers/promises');
+const { DscSimulator, frame } = require('./dsc-simulator.cjs');
+
+const ROOT = path.resolve(__dirname, '../..');
+const BRIDGE_PIN = '031-45-154'; // Synthetic test credentials only.
+const TYPES = {
+  information: '3E', switch: '49', security: '7E', name: '23', serial: '30', on: '25',
+  contact: '6A', motion: '22', leak: '70', smoke: '76', current: '66', target: '67',
+};
+
+function isType(actual, expected) {
+  return actual === expected || actual === `000000${expected}-0000-1000-8000-0026BB765291`;
+}
+
+async function until(description, predicate, timeout = 15000) {
+  const end = Date.now() + timeout;
+  let lastError;
+  do {
+    try {
+      const result = await predicate();
+      if (result) return result;
+    } catch (error) { lastError = error; }
+    await delay(100);
+  } while (Date.now() < end);
+  throw new Error(`Timed out: ${description}${lastError ? ` (${lastError.message})` : ''}`);
+}
+
+async function freePort() {
+  const server = net.createServer();
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  const port = server.address().port;
+  await new Promise(resolve => server.close(resolve));
+  return port;
+}
+
+function homebridgeBinary() {
+  if (process.env.HOMEBRIDGE_BIN) return path.resolve(process.env.HOMEBRIDGE_BIN);
+  // Homebridge 2 exports its entrypoint but intentionally not package.json.
+  let directory = path.dirname(require.resolve('homebridge'));
+  while (!fsSync.existsSync(path.join(directory, 'package.json'))) {
+    const parent = path.dirname(directory);
+    if (parent === directory) throw new Error('Cannot locate Homebridge package metadata');
+    directory = parent;
+  }
+  const manifest = JSON.parse(fsSync.readFileSync(path.join(directory, 'package.json'), 'utf8'));
+  const binary = typeof manifest.bin === 'string' ? manifest.bin : manifest.bin.homebridge;
+  return path.resolve(directory, binary);
+}
+
+class HomebridgeHarness {
+  constructor(storage, port, panel) {
+    this.storage = storage;
+    this.port = port;
+    this.panel = panel;
+    this.run = 0;
+    this.output = '';
+    this.allOutput = '';
+    this.username = ['0E', ...randomBytes(5).toString('hex').match(/../g)].join(':').toUpperCase();
+  }
+
+  config(customCommands) {
+    return {
+      bridge: {
+        name: 'Envisalink Isolated E2E', username: this.username, pin: BRIDGE_PIN,
+        port: this.port, bind: ['127.0.0.1'], advertiser: 'ciao',
+      },
+      accessories: [],
+      platforms: [{
+        platform: 'Envisalink', name: 'E2E DSC', host: '127.0.0.1', port: this.panel.port,
+        password: 'user', pin: '1234', enableAutoDiscovery: false, suppressClockReset: true,
+        partitions: [{ name: 'Main Alarm' }, { name: 'Second Alarm', pin: '5678' }],
+        zones: [
+          { name: 'Front Door', type: 'door', partition: 1, zoneNumber: 1 },
+          { name: 'Hall Motion', type: 'motion', partition: 1, zoneNumber: 2 },
+          { name: 'Smoke Sensor', type: 'smoke', partition: 2, zoneNumber: 3 },
+          { name: 'Leak Sensor', type: 'leak', partition: 2, zoneNumber: 4 },
+          { name: 'Window Sensor', type: 'window', partition: 2, zoneNumber: 7 },
+        ],
+        firePanic: { enabled: true, name: 'Test Fire Panic' },
+        ambulancePanic: { enabled: true, name: 'Test Ambulance Panic' },
+        policePanic: { enabled: true, name: 'Test Police Panic' },
+        ...(customCommands === undefined ? {} : { customCommands }),
+      }],
+    };
+  }
+
+  async start(commands) {
+    this.run++;
+    this.output = '';
+    await fs.writeFile(path.join(this.storage, 'config.json'), JSON.stringify(this.config(commands), null, 2));
+    const binary = homebridgeBinary();
+    const preload = process.env.E2E_LOOPBACK_ONLY === '1' ? ['--require', path.join(__dirname, 'loopback-only.cjs')] : [];
+    this.child = spawn(process.env.HOMEBRIDGE_NODE || process.execPath, [...preload, binary, '-D', '-I', '-Q', '-T',
+      '-U', this.storage, '-P', ROOT, '--strict-plugin-resolution'], {
+      cwd: ROOT, env: { ...process.env, NO_COLOR: '1' }, stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    this.closed = new Promise(resolve => this.child.once('close', (code, signal) => resolve({ code, signal })));
+    this.child.once('error', error => { this.output += `Spawn error: ${error.stack}\n`; });
+    for (const stream of [this.child.stdout, this.child.stderr]) {
+      stream.on('data', chunk => {
+        this.output += chunk.toString();
+        this.allOutput += chunk.toString();
+      });
+    }
+    const loginBaseline = this.panel.logins;
+    await until('Homebridge loaded plugin and received DSC status', async () => {
+      if (this.child.exitCode !== null) throw new Error(this.output.slice(-4000));
+      if (this.panel.logins <= loginBaseline) return false;
+      const accessories = await this.accessories();
+      return accessories.find(accessory => this.serial(accessory) === 'Partition 1 Zone 1');
+    });
+  }
+
+  request(method, endpoint, body) {
+    return new Promise((resolve, reject) => {
+      const data = body === undefined ? undefined : JSON.stringify(body);
+      const request = http.request({
+        host: '127.0.0.1', port: this.port, path: endpoint, method,
+        headers: { Authorization: BRIDGE_PIN, 'Content-Type': 'application/hap+json',
+          ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}) },
+      }, response => {
+        let text = '';
+        response.setEncoding('utf8');
+        response.on('data', chunk => { text += chunk; });
+        response.on('end', () => {
+          try { resolve({ status: response.statusCode, data: text ? JSON.parse(text) : undefined }); }
+          catch (error) { reject(error); }
+        });
+      });
+      request.on('error', reject);
+      request.setTimeout(10000, () => request.destroy(new Error('HAP HTTP request timed out')));
+      request.end(data);
+    });
+  }
+
+  async accessories() {
+    const response = await this.request('GET', '/accessories');
+    assert.equal(response.status, 200);
+    return response.data.accessories;
+  }
+
+  characteristic(accessory, type, serviceType) {
+    for (const service of accessory.services) {
+      if (serviceType && !isType(service.type, serviceType)) continue;
+      const characteristic = service.characteristics.find(item => isType(item.type, type));
+      if (characteristic) return { aid: accessory.aid, iid: characteristic.iid, value: characteristic.value };
+    }
+    throw new Error(`Missing characteristic ${type} on AID ${accessory.aid}`);
+  }
+
+  serial(accessory) { return this.characteristic(accessory, TYPES.serial, TYPES.information).value; }
+
+  async bySerial(serial) {
+    const matches = (await this.accessories()).filter(accessory => this.serial(accessory) === serial);
+    assert.equal(matches.length, 1, `Exactly one accessory for serial ${serial}`);
+    return matches[0];
+  }
+
+  async read(id) {
+    const response = await this.request('GET', `/characteristics?id=${id.aid}.${id.iid}`);
+    assert.equal(response.status, 200);
+    return response.data.characteristics[0].value;
+  }
+
+  async write(id, value) {
+    const response = await this.request('PUT', '/characteristics', {
+      characteristics: [{ aid: id.aid, iid: id.iid, value }],
+    });
+    assert.equal(response.status, 204, JSON.stringify(response));
+  }
+
+  async stop() {
+    if (!this.child) return;
+    const child = this.child;
+    if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+    const killTimer = setTimeout(() => child.kill('SIGKILL'), 8000);
+    await this.closed;
+    clearTimeout(killTimer);
+    await fs.writeFile(path.join(this.storage, `homebridge-${this.run}.log`), this.output);
+    this.child = undefined;
+  }
+
+  async cache() {
+    return JSON.parse(await fs.readFile(path.join(this.storage, 'accessories/cachedAccessories'), 'utf8'));
+  }
+
+  async writeCache(cache) {
+    await fs.writeFile(path.join(this.storage, 'accessories/cachedAccessories'), JSON.stringify(cache));
+  }
+}
+
+test('real Homebridge + DSC TCP + HAP: controls, persisted cache reconciliation, reconnect', { timeout: 240000 }, async t => {
+  // These examples anchor the simulator checksum implementation independently.
+  assert.equal(frame('5053'), '5053CD\r\n');
+  assert.equal(frame('005user'), '005user54\r\n');
+  assert.equal(frame('6543'), '6543D2\r\n');
+  await fs.access(path.join(ROOT, 'dist/index.js')); // Run npm run build first.
+  const storage = await fs.mkdtemp(path.join(os.tmpdir(), 'envisalink-e2e-'));
+  const panel = await new DscSimulator().start();
+  const bridge = new HomebridgeHarness(storage, await freePort(), panel);
+  const initialCommands = [{ name: 'Output One', command: '02011' }, { name: 'Output Two', command: '02012' }];
+  let passed = false;
+
+  async function expectCommand(command, action) {
+    const start = panel.commands.length;
+    await action();
+    await until(`DSC command ${command}`, () => panel.commands.slice(start).some(item => item.body === command));
+    assert.equal(panel.commands.slice(start).filter(item => item.body === command).length, 1);
+  }
+
+  async function expectPreserved() {
+    const serials = (await bridge.accessories()).map(accessory => bridge.serial(accessory));
+    for (const serial of ['Partition 1', 'Partition 2', 'Partition 1 Zone 1', 'Partition 1 Zone 2',
+      'Partition 2 Zone 3', 'Partition 2 Zone 4', 'Partition 2 Zone 7', 'Panic', 'Unknown E2E']) {
+      assert.equal(serials.filter(value => value === serial).length, 1, `Preserve ${serial} without duplication`);
+    }
+  }
+
+  try {
+    await bridge.start(initialCommands);
+    assert.ok(panel.commands.some(item => item.body === '005user'));
+    assert.ok(panel.commands.some(item => item.body === '001'));
+    t.diagnostic('PASS: real Homebridge plugin startup, DSC authentication, initial batched status report');
+
+    for (const [zone, partition, type] of [[1, 1, 'contact'], [2, 1, 'motion'], [3, 2, 'smoke'], [4, 2, 'leak'], [7, 2, 'contact']]) {
+      const id = bridge.characteristic(await bridge.bySerial(`Partition ${partition} Zone ${zone}`), TYPES[type]);
+      assert.equal(Number(await bridge.read(id)), 0);
+      panel.setZone(zone, true);
+      await until(`zone ${zone} open via HAP`, async () => Number(await bridge.read(id)) === 1);
+      panel.setZone(zone, false);
+      await until(`zone ${zone} restored via HAP`, async () => Number(await bridge.read(id)) === 0);
+    }
+    t.diagnostic('PASS: door, window, motion, smoke and leak 609/610 events, including sparse zone 7');
+
+    const partition = await bridge.bySerial('Partition 1');
+    const current = bridge.characteristic(partition, TYPES.current);
+    const target = bridge.characteristic(partition, TYPES.target);
+    for (const [value, command] of [[0, '0311'], [1, '0301'], [2, '0321'], [3, '04011234']]) {
+      await expectCommand(command, () => bridge.write(target, value));
+      await until(`partition state ${value}`, async () => await bridge.read(current) === value);
+    }
+    const second = await bridge.bySerial('Partition 2');
+    await expectCommand('04025678', () => bridge.write(bridge.characteristic(second, TYPES.target), 3));
+    panel.setPartition(1, '6541');
+    await until('alarm event reaches HomeKit', async () => await bridge.read(current) === 4);
+    panel.setPartition(1, '6501');
+    await until('ready event reaches HomeKit', async () => await bridge.read(current) === 3);
+    t.diagnostic('PASS: HomeKit stay/away/night/disarm writes, partition-specific PIN, panel alarm/ready events');
+
+    const output = await bridge.bySerial('02011');
+    const outputId = bridge.characteristic(output, TYPES.on, TYPES.switch);
+    await expectCommand('02011', () => bridge.write(outputId, true));
+    await until('momentary custom command reset', async () => !await bridge.read(outputId), 4000);
+    const count = panel.commands.length;
+    await bridge.write(outputId, false);
+    await delay(150);
+    assert.equal(panel.commands.length, count, 'Turning custom command off sends no panel command');
+    panel.failNext.set('02011', '024');
+    await expectCommand('02011', () => bridge.write(outputId, true));
+    await until('command error logged', () => bridge.output.includes('Failed invoking custom command') && bridge.output.includes('024'));
+    await until('switch resets after panel error', async () => !await bridge.read(outputId), 4000);
+    await expectCommand('02011', () => bridge.write(outputId, true));
+    await until('command succeeds after earlier error', async () => !await bridge.read(outputId), 4000);
+    t.diagnostic('PASS: custom command framing/ACK, momentary reset, false-write no-op, 502 error recovery');
+
+    const originalAid = output.aid;
+    await bridge.stop();
+    const cache = await bridge.cache();
+    const commandCache = cache.filter(item => ['Output One', 'Output Two'].includes(item.displayName));
+    assert.equal(commandCache.length, 2);
+    const originalUUID = commandCache.find(item => item.displayName === 'Output One').UUID;
+    for (const accessory of commandCache) accessory.context = {}; // Actual pre-fix cache format.
+
+    // Preserve an unrelated cached switch with its own serial number and UUID,
+    // outside the custom-command namespace.
+    const unknown = JSON.parse(JSON.stringify(commandCache[0]));
+    unknown.UUID = '480bc1a2-03d1-431e-8e75-102d30e2e001';
+    unknown.displayName = 'Unknown Cached Accessory';
+    unknown.context = { unrelated: true };
+    for (const service of unknown.services) {
+      for (const characteristic of service.characteristics) {
+        if (isType(characteristic.UUID, TYPES.serial)) characteristic.value = 'Unknown E2E';
+        if (isType(characteristic.UUID, TYPES.name)) characteristic.value = 'Unknown Cached Accessory';
+      }
+    }
+    cache.push(unknown);
+    await bridge.writeCache(cache);
+
+    const renamedName = process.env.E2E_REMOVAL_REGRESSION === '1' ? 'Output One' : 'Renamed Output';
+    await bridge.start([{ name: renamedName, command: '02011' }, initialCommands[1]]);
+    const renamed = await bridge.bySerial('02011');
+    assert.equal(renamed.aid, originalAid, 'Name-only changes retain HomeKit AID');
+    assert.equal(bridge.characteristic(renamed, TYPES.name, TYPES.switch).value, renamedName);
+    assert.equal(bridge.characteristic(renamed, TYPES.name, TYPES.information).value, renamedName);
+    assert.equal((await bridge.cache()).find(item => item.UUID === originalUUID).UUID, originalUUID);
+    await expectPreserved();
+    await expectCommand('02011', () => bridge.write(bridge.characteristic(renamed, TYPES.on, TYPES.switch), true));
+    await until('restored command reset', async () => !await bridge.read(bridge.characteristic(renamed, TYPES.on, TYPES.switch)), 4000);
+    t.diagnostic('PASS: legacy unmarked cache restored, rename retains UUID/AID and updates service name, restored action works');
+
+    await bridge.stop();
+    // Recreate unmarked legacy entries immediately before removing them. This
+    // proves cleanup supports upgrades without relying on a prior marked restart.
+    const legacy = await bridge.cache();
+    for (const accessory of legacy) {
+      if ([originalUUID, commandCache[1].UUID].includes(accessory.UUID)) accessory.context = {};
+    }
+    await bridge.writeCache(legacy);
+    await bridge.start([{ name: 'Replacement Output', command: '02013' }]);
+    const serials = (await bridge.accessories()).map(accessory => bridge.serial(accessory));
+    assert.ok(!serials.includes('02011') && !serials.includes('02012'));
+    await bridge.bySerial('02013');
+    const changedCache = await bridge.cache();
+    assert.ok(!changedCache.some(item => [originalUUID, commandCache[1].UUID].includes(item.UUID)));
+    await expectPreserved();
+    t.diagnostic('PASS: command edit and removal delete both legacy orphan accessories from HAP and disk');
+
+    await bridge.stop();
+    await bridge.start([]);
+    assert.ok(!(await bridge.accessories()).some(accessory => bridge.serial(accessory) === '02013'));
+    await expectPreserved();
+    await bridge.stop();
+    await bridge.start([{ name: 'Temporary Output', command: '02014' }]);
+    await bridge.bySerial('02014');
+    await bridge.stop();
+    await bridge.start(undefined);
+    assert.ok(!(await bridge.accessories()).some(accessory => bridge.serial(accessory) === '02014'));
+    await expectPreserved();
+    t.diagnostic('PASS: empty and omitted customCommands remove all commands; zones, partitions, panic and unknown cache survive');
+
+    if (process.env.E2E_SKIP_RECONNECT !== '1') {
+      const loginCount = panel.logins;
+      const disconnectedAt = Date.now();
+      panel.disconnect();
+      await until('real 60-second reconnect and reauthentication', () => panel.logins > loginCount, 75000);
+      assert.ok(Date.now() - disconnectedAt >= 59000, 'Production reconnect timer was not mocked');
+      const door = bridge.characteristic(await bridge.bySerial('Partition 1 Zone 1'), TYPES.contact);
+      panel.setZone(1, true);
+      await until('zone event after reconnect', async () => Number(await bridge.read(door)) === 1);
+      await expectPreserved();
+      t.diagnostic('PASS: real disconnect, production 60-second retry, login/status replay, live HAP updates without duplication');
+    } else {
+      t.diagnostic('SKIPPED: 60-second reconnect (E2E_SKIP_RECONNECT=1)');
+    }
+    assert.deepEqual(panel.protocolErrors, [], 'All outgoing DSC frames have valid checksums and authentication');
+    assert.ok(!/uncaughtException|UnhandledPromiseRejection|Error: Cannot add a Service/.test(bridge.allOutput), 'No process or duplicate-service errors');
+    passed = true;
+  } catch (error) {
+    t.diagnostic(`Failure artifacts: ${storage}`);
+    t.diagnostic(bridge.output.slice(-8000));
+    throw error;
+  } finally {
+    await bridge.stop();
+    await panel.close();
+    await fs.writeFile(path.join(storage, 'dsc-commands.json'), JSON.stringify(panel.commands, null, 2));
+    if (passed && process.env.E2E_KEEP_STORAGE !== '1') await fs.rm(storage, { recursive: true, force: true });
+    else t.diagnostic(`Artifacts retained: ${storage}`);
+  }
+});
