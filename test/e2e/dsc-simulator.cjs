@@ -92,6 +92,8 @@ class DscSimulator {
     } else if (code === '040') {
       const partition = Number(body[3]);
       this.setPartition(partition, `655${partition}`);
+    } else if (code === '071' && /\*1\d{2}#$/.test(body)) {
+      this.setPartition(Number(body[3]), `650${body[3]}`);
     } else if (code === '071' && body.endsWith('*4')) {
       const partition = Number(body[3]);
       const enabled = !this.chimes.get(partition);

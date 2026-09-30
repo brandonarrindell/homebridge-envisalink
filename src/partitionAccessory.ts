@@ -3,6 +3,7 @@ import {CharacteristicValue, PlatformAccessory} from 'homebridge';
 import {EnvisalinkHomebridgePlatform, REPORT_ERROR_TXT} from './platform';
 import {MANUFACTURER, MODEL} from './constants';
 import {Partition, PartitionMode} from './types';
+import {normalizeName, updateAccessoryName, updateServiceName} from './names';
 
 const CHIME_SERVICE_NAME = 'Chime';
 const BYPASS_SERVICE_NAME = 'Bypass';
@@ -21,6 +22,7 @@ export class EnvisalinkPartitionAccessory {
     ) {
 
         this.partition = this.accessory.context as Partition;
+        updateAccessoryName(this.accessory, this.partition.name, this.platform.Characteristic);
 
         this.platform.log.debug(`Setting accessory details for partition: ${JSON.stringify(this.partition, null, 2)}`);
 
@@ -44,14 +46,14 @@ export class EnvisalinkPartitionAccessory {
         if (!this.partition.enableChimeSwitch) {
             return false;
         }
+        const displayName = normalizeName(`${this.partition.name.slice(0, 63 - CHIME_SERVICE_NAME.length)} ${CHIME_SERVICE_NAME}`, CHIME_SERVICE_NAME);
         let chimeService = this.accessory.getService(CHIME_SERVICE_NAME);
         if (!chimeService) {
-            const displayName = `${this.partition.name} ${CHIME_SERVICE_NAME}`;
             chimeService = new this.platform.Service.Switch(displayName, CHIME_SERVICE_NAME);
-            chimeService.setCharacteristic(this.platform.Characteristic.Name, displayName);
             chimeService.setCharacteristic(this.platform.Characteristic.ServiceLabelIndex, index);
             this.accessory.addService(chimeService);
         }
+        updateServiceName(chimeService, displayName, this.platform.Characteristic);
         chimeService.getCharacteristic(this.platform.Characteristic.On)
             .onSet(this.setChimeActive.bind(this));
         chimeService.updateCharacteristic(this.platform.Characteristic.On,
@@ -59,14 +61,14 @@ export class EnvisalinkPartitionAccessory {
     }
 
     bindBypassSwitch(index: number) {
+        const displayName = normalizeName(`${this.partition.name.slice(0, 63 - BYPASS_SERVICE_NAME.length)} ${BYPASS_SERVICE_NAME}`, BYPASS_SERVICE_NAME);
         let bypassService = this.accessory.getService(BYPASS_SERVICE_NAME);
         if (!bypassService) {
-            const displayName = `${this.partition.name} ${BYPASS_SERVICE_NAME}`;
             bypassService = new this.platform.Service.Switch(displayName, BYPASS_SERVICE_NAME);
-            bypassService.setCharacteristic(this.platform.Characteristic.Name, displayName);
             bypassService.setCharacteristic(this.platform.Characteristic.ServiceLabelIndex, index);
             this.accessory.addService(bypassService);
         }
+        updateServiceName(bypassService, displayName, this.platform.Characteristic);
         bypassService.getCharacteristic(this.platform.Characteristic.On)
             .onSet(this.setBypassActive.bind(this));
         bypassService.updateCharacteristic(this.platform.Characteristic.On,
@@ -96,7 +98,7 @@ export class EnvisalinkPartitionAccessory {
     bindSecurityPanel() {
         const service = this.accessory.getService(this.platform.Service.SecuritySystem)
             || this.accessory.addService(this.platform.Service.SecuritySystem);
-        service.setCharacteristic(this.platform.Characteristic.Name, this.partition.name);
+        updateServiceName(service, this.partition.name, this.platform.Characteristic);
         let currentState: number | undefined = undefined;
         let targetState: number | undefined = undefined;
         let obstructionDetected = false;

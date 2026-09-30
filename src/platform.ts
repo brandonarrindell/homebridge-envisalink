@@ -25,6 +25,7 @@ import {NodeAlarmProxy, PartitionUpdate, ZoneUpdate} from './nodeAlarmProxyTypes
 import {EnvisalinkPanicAccessory} from './panicAccessory';
 import {EnvisalinkCustomCommandAccessory} from './customCommandAccessory';
 import {EnvisalinkNetworkScanner} from './networkScanner';
+import {normalizeName, updateAccessoryName, updateServiceName} from './names';
 import envisalinkCodes = require('nodealarmproxy/envisalink.js');
 import * as util from 'util';
 const packageJSON = require('../package.json');
@@ -58,6 +59,7 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
         public readonly config: PlatformConfig,
         public readonly api: HomebridgeAPI,
     ) {
+        this.config.name = normalizeName(this.config.name, PLATFORM_NAME);
         this.log.debug('Finished initializing platform:', this.config.name);
 
         const co = this.getConfig();
@@ -119,9 +121,7 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
                     if (!zoneConfig.zoneNumber) {
                         zoneConfig.zoneNumber = increment;
                     }
-                    if (!zoneConfig.name) {
-                        zoneConfig.name = `Zone ${increment}`;
-                    }
+                    zoneConfig.name = normalizeName(zoneConfig.name, `Zone ${zoneConfig.zoneNumber}`);
                     map.set(`${zoneConfig.zoneNumber}`, zoneConfig);
                     return map;
                 }, new Map<string, ZoneConfig>());
@@ -142,7 +142,21 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
      */
     configureAccessory(accessory: PlatformAccessory) {
         this.log.debug(`Loading accessory from cache: ${accessory.displayName}`);
+        // Repair persisted names even before DSC status arrives, including cached
+        // controls currently disabled in config. Discovery later applies config
+        // names to active accessories without changing identities or handlers.
+        const name = normalizeName(accessory.displayName, 'Envisalink Accessory');
+        updateAccessoryName(accessory, name, this.Characteristic);
+        for (const service of accessory.services) {
+            if (service.testCharacteristic(this.Characteristic.Name)) {
+                updateServiceName(service, normalizeName(service.getCharacteristic(this.Characteristic.Name).value,
+                    normalizeName(service.displayName, name)), this.Characteristic);
+            } else if (service.displayName) {
+                service.displayName = normalizeName(service.displayName, name);
+            }
+        }
         this.accessories.set(accessory.UUID, accessory);
+        this.api.updatePlatformAccessories([accessory]);
     }
 
     async handleDisconnect() {
@@ -204,7 +218,9 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
         // Keep the established command-derived identity so existing HomeKit rooms and
         // automations survive upgrades and name-only changes.
         const configuredUUIDs = new Set<string>();
+        let commandNumber = 0;
         for (const customCommand of this.getConfig().customCommands || []) {
+            const name = normalizeName(customCommand.name, `Custom Command ${++commandNumber}`);
             const uuid = this.api.hap.uuid.generate(`envisalink.customCommand.${customCommand.command}`);
             if (configuredUUIDs.has(uuid)) {
                 this.log.warn('Ignoring duplicate custom command:', customCommand.name);
@@ -214,16 +230,15 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
             let accessory = this.accessories.get(uuid);
             if (accessory) {
                 this.log.debug('Restoring existing custom command accessory from cache:', accessory.displayName);
-                accessory.displayName = customCommand.name;
                 accessory.context.type = 'customCommand';
-                new EnvisalinkCustomCommandAccessory(this, accessory, customCommand.name, customCommand.command);
+                new EnvisalinkCustomCommandAccessory(this, accessory, name, customCommand.command);
                 this.api.updatePlatformAccessories([accessory]);
             } else {
                 this.log.debug('Adding new custom command accessory because accessory was not restored from cache.');
-                accessory = new this.api.platformAccessory(customCommand.name, uuid);
+                accessory = new this.api.platformAccessory(name, uuid);
                 accessory.context.type = 'customCommand';
                 this.accessories.set(uuid, accessory);
-                new EnvisalinkCustomCommandAccessory(this, accessory, customCommand.name, customCommand.command);
+                new EnvisalinkCustomCommandAccessory(this, accessory, name, customCommand.command);
                 this.api.registerPlatformAccessories(PLUGIN_NAME, PLATFORM_NAME, [accessory]);
             }
         }
@@ -260,8 +275,8 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
         let accessory = this.accessories.get(uuid);
         if (accessory) {
             this.log.debug('Restoring existing panic accessory from cache:', accessory.displayName);
-            this.api.updatePlatformAccessories([accessory]);
             new EnvisalinkPanicAccessory(this, accessory, this.getConfig());
+            this.api.updatePlatformAccessories([accessory]);
         } else {
             this.log.debug('Adding new panic accessory because accessory was not restored from cache.');
             accessory = new this.api.platformAccessory('Panic', uuid);
@@ -288,13 +303,14 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
     }
 
     updateZoneAccessory(zone: Zone) {
+        zone.name = normalizeName(zone.name, `Zone ${zone.number}`);
         const uuid = this.api.hap.uuid.generate(`envisalink.${zone.partition}.${zone.number}`);
         let accessory = this.accessories.get(uuid);
         if (accessory) {
             this.log.debug('Restoring existing zone accessory from cache:', accessory.displayName);
             accessory.context = zone;
-            this.api.updatePlatformAccessories([accessory]);
             new EnvisalinkZoneAccessory(this, accessory);
+            this.api.updatePlatformAccessories([accessory]);
         } else {
             this.log.debug(`Adding new zone accessory because ${accessory} was not restored from cache:`, zone.name);
             accessory = new this.api.platformAccessory(zone.name, uuid);
@@ -340,6 +356,7 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
     }
 
     updatePartitionAccessory(partition: Partition) {
+        partition.name = normalizeName(partition.name, `Partition ${partition.number}`);
         const uuid = this.api.hap.uuid.generate(`envisalink.${partition.number}`);
         let accessory = this.accessories.get(uuid);
         partition.pin = partition.pin || this.getConfig().pin;
@@ -357,8 +374,8 @@ export class EnvisalinkHomebridgePlatform implements DynamicPlatformPlugin {
                 partition.bypassEnabled = previousBypassEnabled;
             }
             accessory.context = partition;
-            this.api.updatePlatformAccessories([accessory]);
             new EnvisalinkPartitionAccessory(this, accessory);
+            this.api.updatePlatformAccessories([accessory]);
         } else {
             this.log.debug(`Adding new partition accessory because ${accessory} was not restored from cache:`, partition.name);
             accessory = new this.api.platformAccessory(partition.name, uuid);

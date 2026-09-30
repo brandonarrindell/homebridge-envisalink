@@ -59,6 +59,7 @@ Add to your Homebridge config.json:
   "platforms": [
     {
       "platform": "Envisalink",
+      "name": "Envisalink",
       "enableAutoDiscovery": true,
       "host": "192.168.0.XXX",  // Optional if enableAutoDiscovery is true
       "deviceType": "DSC",
@@ -106,6 +107,7 @@ Add to your Homebridge config.json:
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
+| name | string | "Envisalink" | Platform display name; set explicitly for a child bridge |
 | enableAutoDiscovery | boolean | true | Automatically discover Envisalink devices |
 | host | string | - | IP address of Envisalink (optional with auto-discovery) |
 | deviceType | string | "DSC" | Panel type ("DSC" or "Honeywell") |
@@ -115,6 +117,37 @@ Add to your Homebridge config.json:
 | suppressClockReset | boolean | false | Disable hourly panel clock sync |
 
 See [config.schema.json](./config.schema.json) for full configuration options.
+
+### Display names and upgrading existing caches
+
+Missing or blank partition names use numbered defaults (`Partition 1`,
+`Partition 2`, etc.). Zone defaults use the actual zone number, including sparse
+zones. Panic switches and custom commands also receive usable defaults. Names
+are trimmed, unsupported symbols (such as emoji and `@`) become spaces, and names
+are limited to 64 characters. Unicode letters and numbers, apostrophes and the
+interior punctuation supported by current HAP-NodeJS are preserved. Only display
+names change; partition/zone UUIDs, command-derived identities, service subtypes,
+PINs and panel command strings keep their existing behavior.
+
+For a child bridge, set the platform's `"name": "Envisalink"` explicitly in
+Homebridge's configuration UI or JSON. An existing `"_bridge": { "name":
+"Envisalink", ... }` overrides the platform display name. Replace an invalid
+explicit `_bridge.name` too. Homebridge chooses this name **before** constructing
+the plugin; the plugin's runtime fallback cannot repair that bridge itself.
+Keep the existing `_bridge.username` and other bridge settings when renaming it.
+The npm identifier remains `@brandonarrindell/homebridge-envisalink`; use a display
+name rather than changing the package or platform identifier.
+
+On the first startup with an old invalid cache, Homebridge 2 can warn while
+loading that cache before the plugin receives its accessories. The plugin updates
+the restored accessory, Accessory Information, sensor, security, chime, bypass,
+panic and custom-command names and saves them in place. Cached names are also
+normalized before DSC status arrives, including inactive controls. Active
+accessories receive their configured names after DSC initialization.
+After a normal restart, the repaired cache should load without those
+naming warnings. UUIDs and HomeKit AIDs remain stable; deleting the cache or
+unpairing the bridge is unnecessary. This does not test Apple Home's own cached
+labels or pairing behavior.
 
 ## Auto-Discovery
 
