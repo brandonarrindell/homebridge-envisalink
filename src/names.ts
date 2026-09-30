@@ -27,6 +27,13 @@ export function updateAccessoryName(accessory: PlatformAccessory, name: string, 
         accessory.updateDisplayName(name);
     } else {
         accessory.displayName = name;
+        // Homebridge 1.6 serializes the HAP object rather than the public mirror.
+        // Its API has no display-name setter; keep this compatibility access
+        // isolated here. Later versions use their public setter above.
+        const legacy = accessory as unknown as { _associatedHAPAccessory?: { displayName: string } };
+        if (legacy._associatedHAPAccessory) {
+            legacy._associatedHAPAccessory.displayName = name;
+        }
     }
     const information = accessory.services.find(service => service.UUID === '0000003E-0000-1000-8000-0026BB765291');
     if (information) {
