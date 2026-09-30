@@ -46,7 +46,7 @@
     "homebridge": "^1.6.0 || ^2.0.0-beta.0"
   },
   "dependencies": {
-    "dateformat": "^4.6.3",
+    "dateformat": "^5.0.3",
     "nodealarmproxy": "https://github.com/dustindclark/NodeAlarmProxy/tarball/0abdfe688451cc57b0bbd64cf54e38e54a2d2a67"
   },
   "devDependencies": {
