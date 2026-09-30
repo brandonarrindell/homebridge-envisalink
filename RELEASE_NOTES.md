@@ -1,3 +1,29 @@
+# 2.0.2 — 2026-09-30
+
+## Fixed
+
+- Register accessories under `@brandonarrindell/homebridge-envisalink`, matching
+  the installed package name and preventing Homebridge's "no loaded plugin"
+  registration warning. Thanks to Marc Kagan for contributing
+  [PR #75](https://github.com/brandonarrindell/homebridge-envisalink/pull/75).
+
+## Upgrading and verification
+
+Keep the existing accessory cache, bridge username and panel settings.
+Homebridge migrates legacy unscoped plugin associations through the active
+Envisalink platform; regression tests verify unchanged accessory UUIDs and
+HomeKit AIDs/IIDs, working restored controls, and persisted migration across
+restarts. No cache deletion or re-pairing is required in the tested scenarios.
+
+Real Homebridge-process, simulated DSC TCP panel and HAP HTTP tests cover fresh
+scoped registrations, legacy cache migration, custom-command add/remove/restart,
+and main/child bridges across Homebridge 1.6.0, 1.11.4 and 2.4.0 on supported Node
+22/24 runtimes. All 41 active unit tests and 8 E2E scenarios pass. Physical alarm
+hardware and Apple Home pairing remain outside the simulated test scope.
+See [testing documentation](docs/testing.md) for details.
+
+The Node.js 22/24 requirement introduced in 2.0.0 is unchanged.
+
 # 2.0.1 — 2026-09-30
 
 ## Fixed
