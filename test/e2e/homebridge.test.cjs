@@ -2,7 +2,7 @@
 
 const assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
-const { randomBytes } = require('node:crypto');
+const { randomBytes, randomInt } = require('node:crypto');
 const fs = require('node:fs/promises');
 const fsSync = require('node:fs');
 const http = require('node:http');
@@ -42,7 +42,7 @@ async function freePort(excluded = []) {
   // ranges. Otherwise a HAP client's new source port can occupy the bridge's
   // temporarily closed listening port between process restarts (EADDRINUSE).
   for (let attempt = 0; attempt < 50; attempt++) {
-    const port = 20000 + randomBytes(2).readUInt16BE(0) % 10000;
+    const port = randomInt(20000, 30000);
     if (excluded.includes(port)) continue;
     const server = net.createServer();
     try {
