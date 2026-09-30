@@ -1,4 +1,4 @@
-# 2.0.0 (unreleased)
+# 2.0.0 — 2026-09-30
 
 ## Breaking change: Node.js 22 or 24 required
 
@@ -50,5 +50,3 @@ See [testing documentation](docs/testing.md) for protocol sources and limitation
 The transport implements DSC TPI, not Honeywell TPI; the former README claim of
 Honeywell support was incorrect. Simulated tests do not certify real alarm
 hardware, Apple Home pairing, dispatch, or every firmware/protocol edge case.
-
-This change prepares a draft PR only. No npm release is published automatically.

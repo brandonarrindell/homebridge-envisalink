@@ -15,7 +15,7 @@ This Homebridge plugin integrates your Envisalink security system with HomeKit, 
 
 This fork continues from version 1.2.10 of the original plugin:
 
-- v2.0.0 (unreleased) - Node.js 22/24 support, custom-command cache cleanup,
+- v2.0.0 (2026-09-30) - Node.js 22/24 support, custom-command cache cleanup,
   dependency refresh, and simulated end-to-end tests. **Breaking runtime change:**
   see [migration and release notes](RELEASE_NOTES.md).
 - v1.3.0 - First release of the fork
