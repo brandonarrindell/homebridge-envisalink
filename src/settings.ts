@@ -6,4 +6,4 @@ export const PLATFORM_NAME = 'Envisalink';
 /**
  * This must match the name of your plugin as defined the package.json
  */
-export const PLUGIN_NAME = 'homebridge-envisalink';
+export const PLUGIN_NAME = '@brandonarrindell/homebridge-envisalink';

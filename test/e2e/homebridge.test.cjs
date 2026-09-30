@@ -15,6 +15,9 @@ const { DscSimulator, frame } = require('./dsc-simulator.cjs');
 
 const ROOT = path.resolve(__dirname, '../..');
 const BRIDGE_PIN = '031-45-154'; // Synthetic test credentials only.
+const PLUGIN_NAME = require('../../package.json').name;
+const LEGACY_PLUGIN_NAME = 'homebridge-envisalink';
+const REGISTRATION_WARNING = /no loaded plugin could be found|Could not restore cached accessory|Failed to find plugin to handle accessory|Removing orphaned accessory/;
 const TYPES = {
   information: '3E', switch: '49', security: '7E', name: '23', serial: '30', on: '25',
   contact: '6A', motion: '22', leak: '70', smoke: '76', current: '66', target: '67',
@@ -410,8 +413,8 @@ function assertNames(accessories) {
   }
 }
 
-async function namingFixture(t, child, action) {
-  const storage = await fs.mkdtemp(path.join(os.tmpdir(), 'envisalink-names-'));
+async function bridgeFixture(t, child, action) {
+  const storage = await fs.mkdtemp(path.join(os.tmpdir(), 'envisalink-regression-'));
   const panel = await new DscSimulator().start();
   const port = await freePort();
   const bridge = new HomebridgeHarness(storage, port, panel,
@@ -430,13 +433,122 @@ async function namingFixture(t, child, action) {
     await panel.close();
     await fs.writeFile(path.join(storage, 'dsc-commands.json'), JSON.stringify(panel.commands, null, 2));
     if (passed && process.env.E2E_KEEP_STORAGE !== '1') await fs.rm(storage, { recursive: true, force: true });
-    else t.diagnostic(`Naming artifacts retained: ${storage}`);
+    else t.diagnostic(`Regression artifacts retained: ${storage}`);
   }
 }
 
 for (const child of [false, true]) {
+  test(`registration: scoped fresh accessories, unscoped cache migration and command lifecycle (${child ? 'child' : 'main'} bridge)`,
+    { timeout: 120000 }, async t => bridgeFixture(t, child, async (bridge, panel) => {
+      const commands = [{ name: 'Output One', command: '02011' }, { name: 'Output Two', command: '02012' }];
+      const stableSerials = ['Partition 1', 'Partition 2', 'Partition 1 Zone 1', 'Partition 1 Zone 2',
+        'Partition 2 Zone 3', 'Partition 2 Zone 4', 'Partition 2 Zone 7', 'Panic'];
+      const expectedSerials = [...stableSerials, '02011', '02012'].sort();
+      const cacheSerial = accessory => accessory.services.flatMap(s => s.characteristics)
+        .find(c => isType(c.UUID, TYPES.serial)).value;
+      const uuids = cache => Object.fromEntries(cache.map(a => [cacheSerial(a), a.UUID]));
+      // Include IIDs so handlers are tested at the same HAP addresses after migration.
+      const addresses = accessories => Object.fromEntries(accessories.filter(a => a.aid !== 1).map(a =>
+        [bridge.serial(a), { aid: a.aid, services: a.services.map(s =>
+          ({ iid: s.iid, type: s.type, characteristics: s.characteristics.map(c => ({ iid: c.iid, type: c.type })) })) }]));
+      function assertAssociations(cache) {
+        assert.ok(cache.length > 0);
+        for (const accessory of cache) {
+          assert.equal(accessory.plugin, PLUGIN_NAME, `Scoped plugin association for ${cacheSerial(accessory)}`);
+          assert.equal(accessory.platform, 'Envisalink');
+        }
+      }
+      async function expectCommand(body, action) {
+        const start = panel.commands.length;
+        await action();
+        await until(`DSC ${body} after plugin migration`, () => panel.commands.slice(start).some(c => c.body === body));
+        assert.equal(panel.commands.slice(start).filter(c => c.body === body).length, 1);
+      }
+
+      await bridge.start(commands);
+      const fresh = await bridge.accessories();
+      assert.deepEqual(Object.keys(addresses(fresh)).sort(), expectedSerials);
+      assert.doesNotMatch(bridge.output, REGISTRATION_WARNING, 'Fresh registrations resolve the loaded plugin');
+      const originalAddresses = addresses(fresh);
+      await bridge.stop();
+      const legacy = await bridge.cache();
+      assertAssociations(legacy);
+      const originalUUIDs = uuids(legacy);
+      // Reproduce pre-#75 on-disk plugin associations for EVERY accessory type.
+      // Leave Homebridge persist (AIDs/IIDs), UUIDs, services and serials intact.
+      for (const accessory of legacy) {
+        accessory.plugin = LEGACY_PLUGIN_NAME;
+        if (['02011', '02012'].includes(cacheSerial(accessory))) accessory.context = {};
+      }
+      await bridge.writeCache(legacy);
+      const renamed = [{ name: 'Renamed Output', command: '02011' }, commands[1]];
+      await bridge.start(renamed);
+      assert.deepEqual(addresses(await bridge.accessories()), originalAddresses, 'Migration retains every AID and IID');
+      assert.equal(bridge.characteristic(await bridge.bySerial('02011'), TYPES.name, TYPES.switch).value, 'Renamed Output');
+      assert.equal((bridge.output.match(/Plugin association is now being transformed!/g) || []).length, legacy.length,
+        'Real Homebridge migrates every unscoped cache association');
+      assert.doesNotMatch(bridge.output, REGISTRATION_WARNING);
+      for (const body of ['02011', '02012']) {
+        const id = bridge.characteristic(await bridge.bySerial(body), TYPES.on, TYPES.switch);
+        await expectCommand(body, () => bridge.write(id, true));
+        await until('restored momentary reset', async () => !await bridge.read(id), 4000);
+      }
+      for (const [zone, partition, type] of [[1, 1, TYPES.contact], [2, 1, TYPES.motion], [3, 2, TYPES.smoke],
+        [4, 2, TYPES.leak], [7, 2, TYPES.contact]]) {
+        const id = bridge.characteristic(await bridge.bySerial(`Partition ${partition} Zone ${zone}`), type);
+        panel.setZone(zone, true);
+        await until(`migrated sensor ${zone} opens`, async () => Number(await bridge.read(id)) === 1);
+        panel.setZone(zone, false);
+        await until(`migrated sensor ${zone} restores`, async () => Number(await bridge.read(id)) === 0);
+      }
+      for (const number of [1, 2]) {
+        const partition = await bridge.bySerial(`Partition ${number}`);
+        await expectCommand(`030${number}`, () => bridge.write(bridge.characteristic(partition, TYPES.target), 1));
+        await until('migrated partition arms', async () => await bridge.read(bridge.characteristic(partition, TYPES.current)) === 1);
+        await expectCommand(number === 1 ? '04011234' : '04025678',
+          () => bridge.write(bridge.characteristic(partition, TYPES.target), 3));
+        await until('migrated partition disarms', async () => await bridge.read(bridge.characteristic(partition, TYPES.current)) === 3);
+      }
+      const panic = await bridge.bySerial('Panic');
+      for (const [name, body] of [['Test Fire Panic', '0601'], ['Test Ambulance Panic', '0602'], ['Test Police Panic', '0603']]) {
+        const service = panic.services.find(s => s.characteristics.some(c => isType(c.type, TYPES.name) && c.value === name));
+        const id = { aid: panic.aid, iid: service.characteristics.find(c => isType(c.type, TYPES.on)).iid };
+        await expectCommand(body, () => bridge.write(id, true));
+      }
+      await bridge.stop();
+      const migrated = await bridge.cache();
+      assertAssociations(migrated);
+      assert.deepEqual(uuids(migrated), originalUUIDs, 'Migration retains every UUID');
+
+      const added = { name: 'Added Output', command: '02013' };
+      await bridge.start([...renamed, added]);
+      const afterAdd = addresses(await bridge.accessories());
+      for (const serial of expectedSerials) assert.deepEqual(afterAdd[serial], originalAddresses[serial]);
+      assert.ok(afterAdd['02013'], 'New command appears beside the migrated accessories');
+      assert.doesNotMatch(bridge.output, /Plugin association is now being transformed!/,
+        'Persisted migration does not repeat on the next restart');
+      await expectCommand('02013', async () => bridge.write(bridge.characteristic(await bridge.bySerial('02013'), TYPES.on, TYPES.switch), true));
+      await bridge.stop();
+      assertAssociations(await bridge.cache());
+
+      await bridge.start([added]);
+      const afterRemove = addresses(await bridge.accessories());
+      assert.deepEqual(Object.keys(afterRemove).sort(), [...stableSerials, '02013'].sort());
+      for (const serial of stableSerials) assert.deepEqual(afterRemove[serial], originalAddresses[serial]);
+      assert.deepEqual(afterRemove['02013'], afterAdd['02013']);
+      await bridge.stop();
+      const removed = await bridge.cache();
+      assertAssociations(removed);
+      assert.ok(!removed.some(a => ['02011', '02012'].includes(cacheSerial(a))), 'Removed commands leave the disk cache');
+      await bridge.start([added]);
+      assert.deepEqual(addresses(await bridge.accessories()), afterRemove, 'Removal survives another real restart');
+      await expectCommand('02013', async () => bridge.write(bridge.characteristic(await bridge.bySerial('02013'), TYPES.on, TYPES.switch), true));
+      assert.doesNotMatch(bridge.allOutput, REGISTRATION_WARNING, 'Every process startup and registration resolves its plugin');
+      t.diagnostic('PASS: scoped fresh cache, real legacy association migration, stable UUID/AID/IID, restored sensors/controls and command add/remove/restart');
+    }));
+
   test(`names: missing, empty and whitespace partition/platform names, restart identity (${child ? 'child' : 'main'} bridge)`,
-    { timeout: 90000 }, async t => namingFixture(t, child, async (bridge, panel) => {
+    { timeout: 90000 }, async t => bridgeFixture(t, child, async (bridge, panel) => {
       // _bridge.name is selected by Homebridge BEFORE constructing the plugin.
       // Explicitly set it when testing a child with an omitted platform name.
       if (child) bridge.options.bridgeName = 'Envisalink';
@@ -473,7 +585,7 @@ for (const child of [false, true]) {
     }));
 
   test(`names: malformed fresh names and legacy cache upgrade across every accessory (${child ? 'child' : 'main'} bridge)`,
-    { timeout: 120000 }, async t => namingFixture(t, child, async (bridge, panel) => {
+    { timeout: 120000 }, async t => bridgeFixture(t, child, async (bridge, panel) => {
       bridge.options.platform = {
         name: 'Envisalink',
         partitions: [{ name: ' Main 🚨 Alarm ', enableChimeSwitch: true }, { name: "  Étage (2) & O’Brien  ", pin: '5678' }],
@@ -592,7 +704,7 @@ for (const child of [false, true]) {
 }
 
 test('names: supported child bridge display-name upgrade keeps scoped plugin identifier and bridge identity',
-  { timeout: 45000 }, async t => namingFixture(t, true, async bridge => {
+  { timeout: 45000 }, async t => bridgeFixture(t, true, async bridge => {
     bridge.options.platform = { name: undefined };
     await bridge.start([]);
     const initial = await bridge.accessories();
