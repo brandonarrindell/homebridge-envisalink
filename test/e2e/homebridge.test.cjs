@@ -37,15 +37,27 @@ async function until(description, predicate, timeout = 15000) {
   throw new Error(`Timed out: ${description}${lastError ? ` (${lastError.message})` : ''}`);
 }
 
-async function freePort() {
-  const server = net.createServer();
-  await new Promise((resolve, reject) => {
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  const port = server.address().port;
-  await new Promise(resolve => server.close(resolve));
-  return port;
+async function freePort(excluded = []) {
+  // Keep the restart-stable HAP ports outside macOS/Linux client ephemeral
+  // ranges. Otherwise a HAP client's new source port can occupy the bridge's
+  // temporarily closed listening port between process restarts (EADDRINUSE).
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const port = 20000 + randomBytes(2).readUInt16BE(0) % 10000;
+    if (excluded.includes(port)) continue;
+    const server = net.createServer();
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, '127.0.0.1', resolve);
+      });
+    } catch (error) {
+      if (error.code === 'EADDRINUSE') continue;
+      throw error;
+    }
+    await new Promise(resolve => server.close(resolve));
+    return port;
+  }
+  throw new Error('Cannot find an available isolated HAP port');
 }
 
 function homebridgeBinary() {
@@ -63,9 +75,11 @@ function homebridgeBinary() {
 }
 
 class HomebridgeHarness {
-  constructor(storage, port, panel) {
+  constructor(storage, port, panel, options = {}) {
     this.storage = storage;
-    this.port = port;
+    this.mainPort = port;
+    this.port = options.childPort || port;
+    this.options = options;
     this.panel = panel;
     this.run = 0;
     this.output = '';
@@ -77,7 +91,7 @@ class HomebridgeHarness {
     return {
       bridge: {
         name: 'Envisalink Isolated E2E', username: this.username, pin: BRIDGE_PIN,
-        port: this.port, bind: ['127.0.0.1'], advertiser: 'ciao',
+        port: this.mainPort, bind: ['127.0.0.1'], advertiser: 'ciao',
       },
       accessories: [],
       platforms: [{
@@ -95,6 +109,9 @@ class HomebridgeHarness {
         ambulancePanic: { enabled: true, name: 'Test Ambulance Panic' },
         policePanic: { enabled: true, name: 'Test Police Panic' },
         ...(customCommands === undefined ? {} : { customCommands }),
+        ...this.options.platform,
+        ...(this.options.childPort ? { _bridge: { username: this.username.replace(/^0E/, '0C'),
+          port: this.port, ...(this.options.bridgeName ? { name: this.options.bridgeName } : {}) } } : {}),
       }],
     };
   }
@@ -195,12 +212,16 @@ class HomebridgeHarness {
     this.child = undefined;
   }
 
+  cacheName() {
+    return this.options.childPort ? `cachedAccessories.${this.username.replace(/^0E/, '0C').replace(/:/g, '')}` : 'cachedAccessories';
+  }
+
   async cache() {
-    return JSON.parse(await fs.readFile(path.join(this.storage, 'accessories/cachedAccessories'), 'utf8'));
+    return JSON.parse(await fs.readFile(path.join(this.storage, 'accessories', this.cacheName()), 'utf8'));
   }
 
   async writeCache(cache) {
-    await fs.writeFile(path.join(this.storage, 'accessories/cachedAccessories'), JSON.stringify(cache));
+    await fs.writeFile(path.join(this.storage, 'accessories', this.cacheName()), JSON.stringify(cache));
   }
 }
 
@@ -372,3 +393,230 @@ test('real Homebridge + DSC TCP + HAP: controls, persisted cache reconciliation,
     else t.diagnostic(`Artifacts retained: ${storage}`);
   }
 });
+
+const VALID_NAME = /^[\p{L}\p{N}][\p{L}\p{N}\p{Zs}\u2019'&!._:;()/,-]*[\p{L}\p{N}]$/u;
+const NAME_WARNING = /HAP-NodeJS WARNING:.*invalid '(?:Name|ConfiguredName)'/;
+
+function assertNames(accessories) {
+  for (const accessory of accessories) {
+    for (const service of accessory.services) {
+      for (const characteristic of service.characteristics) {
+        if (isType(characteristic.type, TYPES.name) || isType(characteristic.type, 'E3')) {
+          assert.match(characteristic.value, VALID_NAME, `AID ${accessory.aid} service ${service.type}`);
+          assert.ok(characteristic.value.length <= 64);
+        }
+      }
+    }
+  }
+}
+
+async function namingFixture(t, child, action) {
+  const storage = await fs.mkdtemp(path.join(os.tmpdir(), 'envisalink-names-'));
+  const panel = await new DscSimulator().start();
+  const port = await freePort();
+  const bridge = new HomebridgeHarness(storage, port, panel,
+    child ? { childPort: await freePort([port]) } : {});
+  let passed = false;
+  try {
+    await action(bridge, panel);
+    assert.deepEqual(panel.protocolErrors, []);
+    assert.ok(!/uncaughtException|UnhandledPromiseRejection|Error: Cannot add a Service/.test(bridge.allOutput));
+    passed = true;
+  } catch (error) {
+    t.diagnostic(bridge.output.slice(-8000));
+    throw error;
+  } finally {
+    await bridge.stop();
+    await panel.close();
+    await fs.writeFile(path.join(storage, 'dsc-commands.json'), JSON.stringify(panel.commands, null, 2));
+    if (passed && process.env.E2E_KEEP_STORAGE !== '1') await fs.rm(storage, { recursive: true, force: true });
+    else t.diagnostic(`Naming artifacts retained: ${storage}`);
+  }
+}
+
+for (const child of [false, true]) {
+  test(`names: missing, empty and whitespace partition/platform names, restart identity (${child ? 'child' : 'main'} bridge)`,
+    { timeout: 90000 }, async t => namingFixture(t, child, async (bridge, panel) => {
+      // _bridge.name is selected by Homebridge BEFORE constructing the plugin.
+      // Explicitly set it when testing a child with an omitted platform name.
+      if (child) bridge.options.bridgeName = 'Envisalink';
+      let identities;
+      for (const name of [undefined, '', ' \t\n ']) {
+        bridge.options.platform = { name, partitions: [{ name, enableChimeSwitch: true }, { name, pin: '5678' }] };
+        await bridge.start([]);
+        for (const number of [1, 2]) {
+          const partition = await bridge.bySerial(`Partition ${number}`);
+          assert.equal(bridge.characteristic(partition, TYPES.name, TYPES.information).value, `Partition ${number}`);
+          assert.equal(bridge.characteristic(partition, TYPES.name, TYPES.security).value, `Partition ${number}`);
+          const switchNames = partition.services.filter(s => isType(s.type, TYPES.switch))
+            .map(s => s.characteristics.find(c => isType(c.type, TYPES.name)).value);
+          assert.ok(switchNames.includes(`Partition ${number} Bypass`));
+          if (number === 1) assert.ok(switchNames.includes('Partition 1 Chime'));
+          const start = panel.commands.length;
+          await bridge.write(bridge.characteristic(partition, TYPES.target), 3);
+          await until('fallback-named partition disarm', () => panel.commands.slice(start)
+            .some(c => c.body === (number === 1 ? '04011234' : '04025678')));
+        }
+        assertNames(await bridge.accessories());
+        assert.doesNotMatch(bridge.output, NAME_WARNING);
+        const aids = Object.fromEntries((await bridge.accessories()).map(a => [bridge.serial(a), a.aid]));
+        await bridge.stop();
+        const cache = await bridge.cache();
+        const current = Object.fromEntries(cache.map(a => [a.UUID, a.displayName]));
+        if (identities) {
+          assert.deepEqual(current, identities.cache, 'UUIDs/display names survive actual restart');
+          assert.deepEqual(aids, identities.aids, 'AIDs survive actual restart');
+        }
+        identities = { cache: current, aids };
+      }
+      t.diagnostic('PASS: all absent/blank variants publish usable partitions with numbered names; repeated process restarts preserve UUIDs/AIDs');
+    }));
+
+  test(`names: malformed fresh names and legacy cache upgrade across every accessory (${child ? 'child' : 'main'} bridge)`,
+    { timeout: 120000 }, async t => namingFixture(t, child, async (bridge, panel) => {
+      bridge.options.platform = {
+        name: 'Envisalink',
+        partitions: [{ name: ' Main 🚨 Alarm ', enableChimeSwitch: true }, { name: "  Étage (2) & O’Brien  ", pin: '5678' }],
+        zones: [
+          { name: ' Front 🚪 Door ', type: 'door', partition: 1, zoneNumber: 1 },
+          { name: 'Hall\nMotion', type: 'motion', partition: 1, zoneNumber: 2 },
+          { name: 'Smoke detector ', type: 'smoke', partition: 2, zoneNumber: 3 },
+          { name: '💧', type: 'leak', partition: 2, zoneNumber: 4 },
+          { name: ' Fenêtre / Est ', type: 'window', partition: 2, zoneNumber: 7 },
+        ],
+        firePanic: { enabled: true, name: ' Fire 🚒 Panic ' },
+        ambulancePanic: { enabled: true, name: ' \t ' },
+        policePanic: { enabled: true, name: ' Police @ Panic ' },
+      };
+      await bridge.start([{ name: ' Output ⚡ One ', command: '02011' }]);
+      const initial = await bridge.accessories();
+      assertNames(initial);
+      assert.doesNotMatch(bridge.output, NAME_WARNING);
+      assert.equal(bridge.characteristic(await bridge.bySerial('Partition 2'), TYPES.name, TYPES.information).value, 'Étage (2) & O’Brien');
+      assert.equal(bridge.characteristic(await bridge.bySerial('Partition 2 Zone 4'), TYPES.name, TYPES.information).value, 'Zone 4');
+      const aids = Object.fromEntries(initial.map(a => [bridge.serial(a), a.aid]));
+      await bridge.stop();
+      const cache = await bridge.cache();
+      const uuids = cache.map(a => a.UUID).sort();
+      // Recreate the actual legacy cache shape, including stale information and
+      // service names; do not alter UUID, subtype, serial, AID persistence or command.
+      for (const accessory of cache) {
+        accessory.displayName = ' Legacy 🚨 Name ';
+        for (const service of accessory.services) {
+          service.displayName = ' Legacy 🚨 Service ';
+          const name = service.characteristics.find(c => isType(c.UUID, TYPES.name));
+          if (name) service.characteristics.push({ ...structuredClone(name),
+            UUID: '000000E3-0000-1000-8000-0026BB765291', constructorName: 'ConfiguredName', displayName: 'Configured Name' });
+          for (const characteristic of service.characteristics) {
+            if (isType(characteristic.UUID, TYPES.name) || isType(characteristic.UUID, 'E3')) {
+              characteristic.value = ' Legacy 🚨 Name ';
+            }
+          }
+        }
+      }
+      await bridge.writeCache(cache);
+      bridge.options.platform.partitions[0].name = ' Renamed 🚨 Alarm ';
+      bridge.options.platform.zones[2].name = ' Renamed Smoke ';
+      bridge.options.platform.firePanic.name = ' Renamed Fire ';
+      await bridge.start([{ name: ' Renamed Output ', command: '02011' }]);
+      const restored = await bridge.accessories();
+      assertNames(restored);
+      assert.deepEqual(Object.fromEntries(restored.map(a => [bridge.serial(a), a.aid])), aids, 'All AIDs survive upgrade');
+      assert.equal(bridge.characteristic(await bridge.bySerial('Partition 1'), TYPES.name, TYPES.information).value, 'Renamed Alarm');
+      assert.equal(bridge.characteristic(await bridge.bySerial('Partition 2 Zone 3'), TYPES.name, TYPES.information).value, 'Renamed Smoke');
+      const partition = await bridge.bySerial('Partition 1');
+      const switches = partition.services.filter(s => isType(s.type, TYPES.switch));
+      assert.deepEqual(switches.map(s => s.characteristics.find(c => isType(c.type, TYPES.name)).value).sort(),
+        ['Renamed Alarm Bypass', 'Renamed Alarm Chime']);
+      const panic = await bridge.bySerial('Panic');
+      assert.ok(panic.services.some(s => s.characteristics.some(c => isType(c.type, TYPES.name) && c.value === 'Renamed Fire')),
+        'Cached panic service name is updated');
+      // Homebridge 2 necessarily warns while deserializing an invalid old cache
+      // before plugin callbacks. Assert that all those warnings precede configure.
+      for (const warning of bridge.output.matchAll(/HAP-NodeJS WARNING:.*invalid '(?:Name|ConfiguredName)'[^\n]*/g)) {
+        assert.ok(warning.index < bridge.output.indexOf('Loading accessory from cache:'), warning[0]);
+      }
+      // Exercise the restored handlers through real HAP and DSC TCP.
+      async function command(body, action) {
+        const start = panel.commands.length;
+        await action();
+        await until(`restored DSC ${body}`, () => panel.commands.slice(start).some(c => c.body === body));
+        assert.equal(panel.commands.slice(start).filter(c => c.body === body).length, 1);
+      }
+      const output = await bridge.bySerial('02011');
+      await command('02011', () => bridge.write(bridge.characteristic(output, TYPES.on, TYPES.switch), true));
+      for (const [zone, type] of [[1, TYPES.contact], [2, TYPES.motion], [3, TYPES.smoke], [4, TYPES.leak], [7, TYPES.contact]]) {
+        const serial = `Partition ${zone < 3 ? 1 : 2} Zone ${zone}`;
+        panel.setZone(zone, true);
+        await until(`restored zone ${zone}`, async () => Number(await bridge.read(bridge.characteristic(await bridge.bySerial(serial), type))) === 1);
+      }
+      // Allow the production 10-second chime initialization to finish first.
+      await until('initial chime toggles', () => panel.commands.filter(c => c.body === '0711*4').length >= 2, 15000);
+      const chime = switches.find(s => s.characteristics.some(c => c.value === 'Renamed Alarm Chime'));
+      const on = chime.characteristics.find(c => isType(c.type, TYPES.on));
+      await command('0711*4', () => bridge.write({ aid: partition.aid, iid: on.iid }, true));
+      await until('restored chime HAP status', async () => Boolean(await bridge.read({ aid: partition.aid, iid: on.iid })));
+      for (const [name, body] of [['Renamed Fire', '0601'], ['Ambulance Panic', '0602'], ['Police Panic', '0603']]) {
+        const service = panic.services.find(s => s.characteristics.some(c => isType(c.type, TYPES.name) && c.value === name));
+        const id = { aid: panic.aid, iid: service.characteristics.find(c => isType(c.type, TYPES.on)).iid };
+        await command(body, () => bridge.write(id, true));
+        if (body === '0601') await command('04011234', () => bridge.write(id, false));
+        else {
+          const start = panel.commands.length;
+          await bridge.write(id, false);
+          await delay(100);
+          assert.equal(panel.commands.length, start, 'Police/ambulance false writes remain no-ops');
+        }
+      }
+      const bypass = switches.find(s => s.characteristics.some(c => c.value === 'Renamed Alarm Bypass'));
+      await bridge.write({ aid: partition.aid, iid: bypass.characteristics.find(c => isType(c.type, TYPES.on)).iid }, true);
+      await command('0711*101#', () => bridge.write(bridge.characteristic(partition, TYPES.target), 0));
+      await until('restored arm after bypass', () => panel.commands.some(c => c.body === '0311'));
+      await until('restored armed HAP state', async () => await bridge.read(bridge.characteristic(partition, TYPES.current)) === 0);
+      await command('04011234', () => bridge.write(bridge.characteristic(partition, TYPES.target), 3));
+      await bridge.stop();
+      const repaired = await bridge.cache();
+      assert.deepEqual(repaired.map(a => a.UUID).sort(), uuids);
+      for (const accessory of repaired) {
+        assert.match(accessory.displayName, VALID_NAME);
+        for (const service of accessory.services) {
+          if (service.displayName) assert.match(service.displayName, VALID_NAME);
+        }
+      }
+      await bridge.start([{ name: 'Renamed Output', command: '02011' }]);
+      assertNames(await bridge.accessories());
+      assert.doesNotMatch(bridge.output, NAME_WARNING, 'Restart after migration has no naming warnings');
+      assert.deepEqual(Object.fromEntries((await bridge.accessories()).map(a => [bridge.serial(a), a.aid])), aids);
+      t.diagnostic('PASS: fresh valid HAP names, legacy cache repaired across all types, UUID/AID retained, restored commands/sensors work, next restart has no warnings');
+    }));
+}
+
+test('names: supported child bridge display-name upgrade keeps scoped plugin identifier and bridge identity',
+  { timeout: 45000 }, async t => namingFixture(t, true, async bridge => {
+    bridge.options.platform = { name: undefined };
+    await bridge.start([]);
+    const initial = await bridge.accessories();
+    const childName = bridge.characteristic(initial.find(a => a.aid === 1), TYPES.name, TYPES.information).value;
+    assert.match(childName, /^@brandonarrindell\/homebridge-envisalink/,
+      'Homebridge selects the scoped default before the platform constructor');
+    if (/Homebridge v2\.\d+\.\d+ \(HAP/.test(bridge.output)) assert.match(bridge.output, NAME_WARNING);
+    const aids = Object.fromEntries(initial.map(a => [bridge.serial(a), a.aid]));
+    await bridge.stop();
+    // Supported user config, keeping the exact same child username/persist/cache.
+    bridge.options.platform.name = 'Envisalink';
+    await bridge.start([]);
+    assertNames(await bridge.accessories());
+    assert.doesNotMatch(bridge.output, NAME_WARNING);
+    assert.deepEqual(Object.fromEntries((await bridge.accessories()).map(a => [bridge.serial(a), a.aid])), aids);
+    await bridge.stop();
+    // An explicit child name overrides even an invalid platform display name.
+    bridge.options.platform.name = '@brandonarrindell/homebridge-envisalink';
+    bridge.options.bridgeName = 'Envisalink';
+    await bridge.start([]);
+    assertNames(await bridge.accessories());
+    assert.doesNotMatch(bridge.output, NAME_WARNING);
+    assert.deepEqual(Object.fromEntries((await bridge.accessories()).map(a => [bridge.serial(a), a.aid])), aids);
+    const manifest = JSON.parse(await fs.readFile(path.join(ROOT, 'package.json'), 'utf8'));
+    assert.equal(manifest.name, '@brandonarrindell/homebridge-envisalink', 'Scoped npm identifier remains unchanged');
+    t.diagnostic('PASS: scoped child default reproduced; platform.name and _bridge.name prevent warnings with stable identity');
+  }));

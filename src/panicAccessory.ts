@@ -3,6 +3,7 @@ import {CharacteristicValue, PlatformAccessory, Service} from 'homebridge';
 import {EnvisalinkHomebridgePlatform} from './platform';
 import {MANUFACTURER, MODEL} from './constants';
 import {EnvisalinkConfig} from './configTypes';
+import {normalizeName, updateAccessoryName, updateServiceName} from './names';
 
 enum PanicType {
     Fire = 1,
@@ -23,6 +24,7 @@ export class EnvisalinkPanicAccessory {
         private readonly accessory: PlatformAccessory,
         private readonly config: EnvisalinkConfig,
     ) {
+        updateAccessoryName(this.accessory, 'Panic', this.platform.Characteristic);
         if (config.firePanic?.enabled) {
             this.bindPanicSwitch(PanicType.Fire, config.firePanic.name);
         }
@@ -36,7 +38,7 @@ export class EnvisalinkPanicAccessory {
         }
     }
 
-    bindPanicSwitch(panicType: PanicType, name: string): void {
+    bindPanicSwitch(panicType: PanicType, name?: string): void {
         const infoService = this.accessory.getService(this.platform.Service.AccessoryInformation);
         if (infoService) {
             infoService.setCharacteristic(this.platform.Characteristic.Manufacturer, MANUFACTURER)
@@ -44,9 +46,11 @@ export class EnvisalinkPanicAccessory {
                 .setCharacteristic(this.platform.Characteristic.SerialNumber, 'Panic');
         }
         const panicTypeString = PanicType[panicType];
+        const displayName = normalizeName(name, `${panicTypeString} Panic`);
         const panicServiceId = `${PANIC_SERVICE_NAME}.${panicTypeString}`;
         const panicService = this.accessory.getService(panicServiceId) ||
-            this.accessory.addService(this.platform.Service.Switch, name || `${panicTypeString} Panic`, panicServiceId );
+            this.accessory.addService(this.platform.Service.Switch, displayName, panicServiceId );
+        updateServiceName(panicService, displayName, this.platform.Characteristic);
         panicService.getCharacteristic(this.platform.Characteristic.On)
             .onSet(this.activatePanic.bind(this, panicType, panicService));
         panicService.updateCharacteristic(this.platform.Characteristic.On,

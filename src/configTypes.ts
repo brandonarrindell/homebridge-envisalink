@@ -2,13 +2,13 @@ import {PlatformConfig} from 'homebridge';
 import {ZoneType} from './types';
 
 export type PartitionConfig = {
-    name: string;
+    name?: string;
     enableChimeSwitch?: boolean;
     pin?: string;
 };
 
 export type ZoneConfig = {
-    name: string;
+    name?: string;
     partition: number;
     zoneNumber: number;
     type: ZoneType;
@@ -16,11 +16,11 @@ export type ZoneConfig = {
 
 export type PanicConfig = {
     enabled: boolean;
-    name: string;
+    name?: string;
 };
 
 export type CustomCommandConfig = {
-    name: string;
+    name?: string;
     command: string;
 };
 

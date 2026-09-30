@@ -16,7 +16,7 @@ The unit suite covers accessory reconciliation with small controlled fixtures. T
 end-to-end suite runs a **real Homebridge process**, the built plugin and its
 actual pinned NodeAlarmProxy dependency, a TCP DSC panel simulator, and HomeKit
 Accessory Protocol (HAP) HTTP requests. It does not need an alarm panel, an Apple
-device, or existing Homebridge configuration. Allow about two minutes, including
+device, or existing Homebridge configuration. Allow about three minutes, including
 the production 60-second reconnect delay.
 
 `test/e2e/homebridge.test.cjs` uses Node's built-in test runner, independently of
@@ -29,7 +29,9 @@ Homebridge receives an isolated temporary `-U` storage directory, a unique bridg
 identity, explicit loopback binding, and `--strict-plugin-resolution`. It loads
 only this checkout using `-P`. Insecure HAP access (`-I`) is restricted to this
 test bridge; never enable it on a production bridge just to run these tests.
-The test never contacts a real panel or fires a real panic alarm.
+The test never contacts a real panel or fires a real panic alarm. HAP listener
+ports are probed in 20000–29999, outside the usual macOS/Linux client ephemeral
+ranges, so HTTP client connections do not claim a bridge's port between restarts.
 
 ## What is asserted
 
@@ -50,6 +52,15 @@ The test never contacts a real panel or fires a real panic alarm.
 - Empty and omitted `customCommands` remove all custom-command accessories
 - Zone, partition, panic and unrelated cached accessories survive reconciliation
   without duplicate accessories
+- Omitted, empty and whitespace partition/platform names on main and child bridges,
+  numbered fallbacks, actual restarts, stable UUIDs and HomeKit AIDs
+- Fresh malformed names and legacy cache upgrades across door, window, motion,
+  smoke and leak zones, partitions, chime, bypass, all panic switches and custom
+  commands; Unicode/punctuation retention, full display/information/service name
+  repair and restored HAP controls with exact DSC commands
+- Supported explicit platform/child bridge display names; invalid legacy-cache
+  warnings are permitted only during Homebridge's deserialization before plugin
+  callbacks, and the next process restart must have no naming warnings
 - A real TCP disconnect, the unchanged 60-second retry delay, reauthentication,
   status replay, and subsequent live sensor updates
 
@@ -63,6 +74,10 @@ claiming that HomeKit receives a failure status.
 ## Useful variants
 
 ```sh
+# Focused naming regressions only (still real Homebridge processes and restarts).
+npm run build
+node --test --test-name-pattern='names:' test/e2e/homebridge.test.cjs
+
 # Fast restart/cache iteration. Reports reconnect as skipped.
 E2E_SKIP_RECONNECT=1 npm run test:e2e
 

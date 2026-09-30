@@ -2,6 +2,7 @@ import {CharacteristicValue, PlatformAccessory, Service} from 'homebridge';
 
 import {EnvisalinkHomebridgePlatform} from './platform';
 import {MANUFACTURER, MODEL} from './constants';
+import {updateAccessoryName, updateServiceName} from './names';
 
 /**
  * Platform Accessory
@@ -17,6 +18,7 @@ export class EnvisalinkCustomCommandAccessory {
         private readonly name: string,
         private readonly command: string,
     ) {
+        updateAccessoryName(this.accessory, this.name, this.platform.Characteristic);
         const infoService = this.accessory.getService(this.platform.Service.AccessoryInformation);
         if (infoService) {
             infoService.setCharacteristic(this.platform.Characteristic.Name, this.name)
@@ -26,7 +28,7 @@ export class EnvisalinkCustomCommandAccessory {
         }
         this.service = this.accessory.getService(this.platform.Service.Switch) ||
             this.accessory.addService(this.platform.Service.Switch, this.name);
-        this.service.setCharacteristic(this.platform.Characteristic.Name, this.name);
+        updateServiceName(this.service, this.name, this.platform.Characteristic);
         this.service.getCharacteristic(this.platform.Characteristic.On)
             .onSet(this.invokeCommand.bind(this));
         this.service.updateCharacteristic(this.platform.Characteristic.On,

@@ -4,6 +4,13 @@
   "schema": {
     "type": "object",
     "properties": {
+      "name": {
+        "title": "Platform Name",
+        "type": "string",
+        "required": false,
+        "default": "Envisalink",
+        "description": "Display name for this platform and its default child bridge. Set Envisalink explicitly when using a child bridge; Homebridge chooses the bridge name before loading the plugin."
+      },
       "host": {
         "title": "Host/IP Address",
         "type": "string",
@@ -125,8 +132,8 @@
             "name": {
               "title": "Name",
               "type": "string",
-              "description": "Distinguish between partitions if you have multiple (i.e. Upstairs/Downstairs).  Otherwise, name your alarm.",
-              "required": true
+              "description": "Distinguish between partitions (e.g. Upstairs/Downstairs). Missing, empty or unusable names default to Partition 1, Partition 2, etc.",
+              "required": false
             },
             "enableChimeSwitch": {
               "title": "Enable Chime Switch",

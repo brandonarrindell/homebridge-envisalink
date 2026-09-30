@@ -2,6 +2,7 @@ import {PartitionUpdate, ZoneUpdate} from './nodeAlarmProxyTypes';
 import envisalinkCodes = require('nodealarmproxy/envisalink.js');
 import {EnvisalinkStatusCode, Partition, Zone} from './types';
 import {PartitionConfig, ZoneConfig} from './configTypes';
+import {normalizeName} from './names';
 
 
 export const transformZoneStatuses = (zoneConfigs: Map<string, ZoneConfig>, zoneStatuses: Map<string, ZoneUpdate>): Map<number, Zone> => {
@@ -24,7 +25,7 @@ export const transformZoneStatus = (zoneConfigs: Map<string, ZoneConfig>, number
     const statusCode = zone.code && zone.code.length > 2 ? zone.code.substring(0, 3) : zone.code;
     const detailedStatus = envisalinkCodes.tpicommands[statusCode];
     return {
-        name: zoneConfig.name,
+        name: normalizeName(zoneConfig.name, `Zone ${number}`),
         type: zoneConfig.type,
         number: number,
         partition: zoneConfig.partition,
@@ -56,7 +57,7 @@ export const transformPartitionStatus = (partitionConfigs: ReadonlyArray<Partiti
         : statusCode === EnvisalinkStatusCode.ChimeDisabled ? false
             : undefined;
     return {
-        name: partitionConfig.name,
+        name: normalizeName(partitionConfig.name, `Partition ${number}`),
         number: number,
         enableChimeSwitch: partitionConfig.enableChimeSwitch || false,
         chimeCommand: `071${number}*4`,

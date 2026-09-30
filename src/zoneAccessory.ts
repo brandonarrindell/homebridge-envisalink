@@ -3,6 +3,7 @@ import {PlatformAccessory, Service} from 'homebridge';
 import {EnvisalinkHomebridgePlatform} from './platform';
 import {MANUFACTURER, MODEL} from './constants';
 import {Zone, ZoneType} from './types';
+import {updateAccessoryName, updateServiceName} from './names';
 
 /**
  * Platform Accessory
@@ -19,6 +20,7 @@ export class EnvisalinkZoneAccessory {
     ) {
 
         this.zone = this.accessory.context as Zone;
+        updateAccessoryName(this.accessory, this.zone.name, this.platform.Characteristic);
 
         this.platform.log.debug(`Setting accessory details for zone: ${JSON.stringify(this.zone, null, 2)}`);
 
@@ -52,7 +54,7 @@ export class EnvisalinkZoneAccessory {
         this.platform.log.debug(`${this.zone.name} is a contact sensor. Binding.`);
         const service = this.accessory.getService(this.platform.Service.ContactSensor)
             || this.accessory.addService(this.platform.Service.ContactSensor);
-        service.setCharacteristic(this.platform.Characteristic.Name, this.zone.name);
+        updateServiceName(service, this.zone.name, this.platform.Characteristic);
 
         service.updateCharacteristic(this.platform.Characteristic.ContactSensorState,
             this.zone.status.text === 'open' ? this.platform.Characteristic.ContactSensorState.CONTACT_NOT_DETECTED
@@ -64,7 +66,7 @@ export class EnvisalinkZoneAccessory {
         this.platform.log.debug(`${this.zone.name} is a motion sensor. Binding.`);
         const service = this.accessory.getService(this.platform.Service.MotionSensor)
             || this.accessory.addService(this.platform.Service.MotionSensor);
-        service.setCharacteristic(this.platform.Characteristic.Name, this.zone.name);
+        updateServiceName(service, this.zone.name, this.platform.Characteristic);
 
         service.updateCharacteristic(this.platform.Characteristic.MotionDetected,
             this.zone.status.text === 'open');
@@ -75,7 +77,7 @@ export class EnvisalinkZoneAccessory {
         this.platform.log.debug(`${this.zone.name} is a leak sensor. Binding.`);
         const service = this.accessory.getService(this.platform.Service.LeakSensor)
             || this.accessory.addService(this.platform.Service.LeakSensor);
-        service.setCharacteristic(this.platform.Characteristic.Name, this.zone.name);
+        updateServiceName(service, this.zone.name, this.platform.Characteristic);
 
         service.updateCharacteristic(this.platform.Characteristic.LeakDetected,
             this.zone.status.text === 'open');
@@ -86,7 +88,7 @@ export class EnvisalinkZoneAccessory {
         this.platform.log.debug(`${this.zone.name} is a smoke sensor. Binding.`);
         const service = this.accessory.getService(this.platform.Service.SmokeSensor)
             || this.accessory.addService(this.platform.Service.SmokeSensor);
-        service.setCharacteristic(this.platform.Characteristic.Name, this.zone.name);
+        updateServiceName(service, this.zone.name, this.platform.Characteristic);
 
         service.updateCharacteristic(this.platform.Characteristic.SmokeDetected,
             this.zone.status.text === 'open');
