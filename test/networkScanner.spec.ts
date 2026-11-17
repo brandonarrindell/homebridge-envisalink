@@ -36,8 +36,8 @@ jest.mock('os', () => {
 // Mock the EnvisalinkNetworkScanner
 jest.mock('../src/networkScanner');
 
-// Mock the nodealarmproxy module
-jest.mock('nodealarmproxy', () => {
+// Mock the vendored nodealarmproxy module
+jest.mock('../vendor/nodealarmproxy/nodealarmproxy.js', () => {
   return {
     initConfig: jest.fn().mockReturnValue({
       on: jest.fn()

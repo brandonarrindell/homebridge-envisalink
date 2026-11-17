@@ -4,7 +4,7 @@ import {ZoneType} from '../src/types';
 import {HomebridgeAPI} from 'homebridge/lib/api';
 import {EnvisalinkHomebridgePlatform} from '../src/platform';
 
-jest.mock('nodealarmproxy', () => ({initConfig: jest.fn(), manualCommand: jest.fn()}));
+jest.mock('../vendor/nodealarmproxy/nodealarmproxy.js', () => ({initConfig: jest.fn(), manualCommand: jest.fn()}));
 
 describe('HomeKit display names', () => {
     it.each([undefined, null, 12, '', ' \t\r\n ', '🚨💧', '@/', "'''", 'A'])

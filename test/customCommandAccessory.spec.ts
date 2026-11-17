@@ -3,7 +3,7 @@ const { hap, platformAccessory: PlatformAccessory } = new HomebridgeAPI();
 import { EnvisalinkHomebridgePlatform } from '../src/platform';
 import { PLATFORM_NAME, PLUGIN_NAME } from '../src/settings';
 
-jest.mock('nodealarmproxy', () => ({ initConfig: jest.fn(), manualCommand: jest.fn() }));
+jest.mock('../vendor/nodealarmproxy/nodealarmproxy.js', () => ({ initConfig: jest.fn(), manualCommand: jest.fn() }));
 
 const commandUUID = (command: string) => hap.uuid.generate(`envisalink.customCommand.${command}`);
 

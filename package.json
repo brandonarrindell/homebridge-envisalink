@@ -47,7 +47,7 @@
   },
   "dependencies": {
     "dateformat": "^4.6.3",
-    "nodealarmproxy": "https://github.com/dustindclark/NodeAlarmProxy/tarball/0abdfe688451cc57b0bbd64cf54e38e54a2d2a67"
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

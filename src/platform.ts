@@ -8,7 +8,7 @@ import {
     Service,
 } from 'homebridge';
 
-import nap = require('nodealarmproxy');
+import nap = require('../vendor/nodealarmproxy/nodealarmproxy.js');
 import dateFormat from 'dateformat';
 import {PLATFORM_NAME, PLUGIN_NAME} from './settings';
 import {EnvisalinkConfig, ZoneConfig} from './configTypes';
@@ -26,7 +26,7 @@ import {EnvisalinkPanicAccessory} from './panicAccessory';
 import {EnvisalinkCustomCommandAccessory} from './customCommandAccessory';
 import {EnvisalinkNetworkScanner} from './networkScanner';
 import {normalizeName, updateAccessoryName, updateServiceName} from './names';
-import envisalinkCodes = require('nodealarmproxy/envisalink.js');
+import envisalinkCodes = require('../vendor/nodealarmproxy/envisalink.js');
 import * as util from 'util';
 const packageJSON = require('../package.json');
 export const REPORT_ERROR_TXT = '\nPlease report all bugs at ' + packageJSON.bugs.url + '\n';
