@@ -70,7 +70,7 @@ exports.initConfig = function (initconfig) {
 			});
 
 			c.on('data', function (data) {
-				log.debug('data', data.toString());
+				log.debug('data', redactLogin(data.toString()));
 				var dataslice = data.toString().replace(/[\n\r]/g, ',').split(',');
 
 				for (var i = 0; i < dataslice.length; i++) {
@@ -79,7 +79,7 @@ exports.initConfig = function (initconfig) {
 						if (rec.bytes === '' || rec.bytes === 0) {
 							log.debug(rec.pre, rec.post);
 						} else {
-							log.debug(rec.pre, dataslice[i].substring(3, dataslice[i].length - 2), rec.post);
+							log.debug(rec.pre, rec.action === 'checkpassword' ? REDACTED : dataslice[i].substring(3, dataslice[i].length - 2), rec.post);
 						}
 						if (rec.action === 'checkpassword') {
 							checkpassword(c, dataslice[i]);
@@ -140,7 +140,7 @@ exports.initConfig = function (initconfig) {
 		}
 		if (loginStatus === '3') {
 			log.info('Envisalink login requested... sending response...');
-			sendcommand(actual, '005' + config.password);
+			sendlogin(actual, config.password);
 		}
 	}
 
@@ -349,14 +349,32 @@ exports.initConfig = function (initconfig) {
 	return eventEmitter;
 };
 
-function sendcommand(addressee, command) {
+function checksummed(command) {
 	var checksum = 0;
 	for (var i = 0; i < command.length; i++) {
 		checksum += command.charCodeAt(i);
 	}
-	checksum = checksum.toString(16).slice(-2).toUpperCase();
-	log.debug('sendcommand', command + checksum)
-	addressee.write(command + checksum + '\r\n');
+	return command + checksum.toString(16).slice(-2).toUpperCase();
+}
+
+// homebridge-envisalink change: mask the password in any 005 login packet
+// before it is logged.
+var REDACTED = '******';
+function redactLogin(text) {
+	return String(text).replace(/(^|[\r\n,])005[^\r\n,]*/g, '$1005' + REDACTED);
+}
+
+function sendcommand(addressee, command) {
+	var packet = checksummed(command);
+	log.debug('sendcommand', redactLogin(packet));
+	addressee.write(packet + '\r\n');
+}
+
+// homebridge-envisalink change: send the TPI login (005 + password) without
+// writing the password to the log.
+function sendlogin(addressee, password) {
+	log.debug('sendcommand', '005' + REDACTED);
+	addressee.write(checksummed('005' + password) + '\r\n');
 }
 
 exports.manualCommand = function (command, callback) {

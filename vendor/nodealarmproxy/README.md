@@ -1,8 +1,13 @@
 # Vendored NodeAlarmProxy
 
-These files are an unmodified copy of NodeAlarmProxy at
+These files are a copy of NodeAlarmProxy at
 [dustindclark/NodeAlarmProxy@0abdfe6](https://github.com/dustindclark/NodeAlarmProxy/tree/0abdfe688451cc57b0bbd64cf54e38e54a2d2a67),
 the exact commit this plugin previously installed as a GitHub tarball dependency.
+
+`envisalink.js` is unmodified. `nodealarmproxy.js` has one change, marked
+`homebridge-envisalink change` in the source: debug logging masks the password
+in TPI login (`005`) packets, both the one sent to the EnvisaLink and any received
+by the optional proxy server. The bytes sent on the wire are unchanged.
 
 They ship inside the plugin because npm 12 refuses to fetch remote (tarball URL)
 dependencies of installed packages by default, and the `nodealarmproxy` package
