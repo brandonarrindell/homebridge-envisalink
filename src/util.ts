@@ -1,5 +1,5 @@
 import {PartitionUpdate, ZoneUpdate} from './nodeAlarmProxyTypes';
-import envisalinkCodes = require('nodealarmproxy/envisalink.js');
+import envisalinkCodes = require('../vendor/nodealarmproxy/envisalink.js');
 import {EnvisalinkStatusCode, Partition, Zone} from './types';
 import {PartitionConfig, ZoneConfig} from './configTypes';
 import {normalizeName} from './names';

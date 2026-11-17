@@ -178,6 +178,7 @@ configured `609`/`610` mapping, not physical detector behavior or all alarm even
 
 - [Bundled EnvisaLink TPI 1.08 protocol](EnvisaLinkTPI-1-08.pdf), sections 2–3
 - [EyezOn's official DSC and Honeywell TPI documents](https://forum.eyezon.com/viewtopic.php?t=301)
+- Bundled copy of that commit: [`vendor/nodealarmproxy`](../vendor/nodealarmproxy)
 - [Exact pinned NodeAlarmProxy implementation](https://github.com/dustindclark/NodeAlarmProxy/blob/0abdfe688451cc57b0bbd64cf54e38e54a2d2a67/nodealarmproxy.js)
 - [Pinned NodeAlarmProxy command definitions](https://github.com/dustindclark/NodeAlarmProxy/blob/0abdfe688451cc57b0bbd64cf54e38e54a2d2a67/envisalink.js)
 - [HAP-NodeJS HTTP request handlers](https://github.com/homebridge/HAP-NodeJS/blob/master/src/lib/HAPServer.ts)

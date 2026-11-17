@@ -271,7 +271,7 @@ Upgrade older Node installations before installing version 2; see the
 ## Credits
 
 - Original plugin by [Dustin D. Clark](https://github.com/dustindclark)
-- Built on [Node Alarm Proxy](https://www.npmjs.com/package/nodealarmproxy)
+- Built on [Node Alarm Proxy](https://github.com/dustindclark/NodeAlarmProxy), bundled in [`vendor/nodealarmproxy`](vendor/nodealarmproxy) under its MIT license
 
 ## License
 

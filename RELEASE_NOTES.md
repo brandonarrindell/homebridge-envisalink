@@ -1,3 +1,13 @@
+# Unreleased
+
+## Fixed
+
+- Install and update cleanly with npm 12, which refuses remote (GitHub tarball)
+  dependencies of installed packages by default. NodeAlarmProxy is now bundled
+  unmodified in `vendor/nodealarmproxy` from the same pinned commit
+  (`0abdfe6`), and its `winston` dependency is declared directly. Fixes
+  [#87](https://github.com/brandonarrindell/homebridge-envisalink/issues/87).
+
 # 2.0.2 — 2026-09-30
 
 ## Fixed
