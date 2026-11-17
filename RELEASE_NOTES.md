@@ -11,12 +11,24 @@
   TPI login packets are now masked in log output; what is sent to the panel is
   unchanged.
 
+## Added
+
+- Node.js 26 support. The plugin's engine range is now Node 22, 24 or 26, so
+  installing on Node 26 no longer warns `EBADENGINE`. Homebridge 1.x itself does
+  not support Node 26; use Homebridge 2.5 or later there.
+
+## Development
+
+- Replace the deprecated `glob@10` pulled in by Jest's coverage tooling, through
+  an override to `test-exclude` 8.
+
 ## Upgrading and verification
 
 No configuration, cache or HomeKit changes are needed. Updating with npm 12 no
 longer requires `--allow-remote=all`. Lint, all 41 active unit tests and the 8
-simulated-panel E2E scenarios pass on Homebridge 1.11.4 and 2.4.0, and CI covers
-Node 22/24 and Homebridge 1.6.0. A clean `npm install --allow-remote=root` with
+simulated-panel E2E scenarios pass on Homebridge 1.11.4 and 2.4.0 with Node 22,
+and on Homebridge 2.5.0 with Node 26.13.1. CI covers Node 22/24/26 and Homebridge
+1.6.0. A clean `npm install --allow-remote=root` with
 npm 12.2.2 succeeds. Physical alarm hardware remains outside the simulated test
 scope.
 

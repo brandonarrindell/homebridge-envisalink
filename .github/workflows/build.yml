@@ -18,6 +18,9 @@ jobs:
           - node: 24
             homebridge: '1.6.0'
             runtime-node: '22.0.0'
+          # Homebridge 1.x does not support Node 26.
+          - node: 26
+            homebridge: '2.5.0'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

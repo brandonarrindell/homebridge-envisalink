@@ -113,7 +113,10 @@ package metadata, accommodating both Homebridge 1.x and 2.x entrypoint names.
 temporary directory is printed. Successful runs remove their own temporary
 storage unless `E2E_KEEP_STORAGE=1` is set. No production cache is touched.
 CI runs the complete suite against Homebridge 1.11.4 and 2.4.0 on Node 22 and 24,
-plus the supported Homebridge 1.6.0 / Node 22.0.0 runtime floor.
+against Homebridge 2.5.0 on Node 26, plus the supported Homebridge 1.6.0 / Node
+22.0.0 runtime floor. Homebridge 1.x does not support Node 26, so a dev checkout on
+Node 26 still shows engine and `q` deprecation warnings from the Homebridge 1.11.4
+dev dependency; they do not affect installed copies of the plugin.
 
 ### Restricted containers
 

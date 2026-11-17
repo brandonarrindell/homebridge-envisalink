@@ -17,7 +17,7 @@ This fork continues from version 1.2.10 of the original plugin:
 
 - v2.0.3 (2026-11-17) - Install and update with npm 12's default remote-dependency
   policy, fixing [#87](https://github.com/brandonarrindell/homebridge-envisalink/issues/87),
-  and keep panel passwords out of debug logs.
+  keep panel passwords out of debug logs, and add Node.js 26 support.
 - v2.0.2 (2026-09-30) - Fix scoped plugin registration and verify legacy cache
   migration. Thanks to Marc Kagan for [PR #75](https://github.com/brandonarrindell/homebridge-envisalink/pull/75).
 - v2.0.1 (2026-09-30) - Missing-name fallbacks, valid HomeKit names and cached
@@ -245,7 +245,7 @@ number and matching UUID, without deleting unrelated accessories.
 
 ## Development and testing
 
-Use Node.js 22.13+ or 24 for development tooling, then run:
+Use Node.js 22.13+, 24 or 26 for development tooling, then run:
 
 ```sh
 npm ci
@@ -258,8 +258,10 @@ alarm credentials are needed. The simulator binds only to loopback and uses
 temporary Homebridge storage. See [the testing guide](docs/testing.md) for protocol
 sources, coverage, runtime overrides, and important simulation limits.
 
-Version 2 requires Node.js 22 or 24. CI runs the simulator against Homebridge 1
-and 2 on both Node versions, and checks the Homebridge 1.6 API floor on Node 22.0.0.
+Version 2 requires Node.js 22, 24 or 26 (26 from version 2.0.3). CI runs the
+simulator against Homebridge 1 and 2 on Node 22 and 24, against Homebridge 2.5 on
+Node 26 (Homebridge 1 does not support Node 26), and checks the Homebridge 1.6 API
+floor on Node 22.0.0.
 Upgrade older Node installations before installing version 2; see the
 [migration notes](RELEASE_NOTES.md). The Homebridge engine range is unchanged.
 
