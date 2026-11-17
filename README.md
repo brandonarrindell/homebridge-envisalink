@@ -15,6 +15,9 @@ This Homebridge plugin integrates your Envisalink security system with HomeKit, 
 
 This fork continues from version 1.2.10 of the original plugin:
 
+- v2.0.3 (2026-11-17) - Install and update with npm 12's default remote-dependency
+  policy, fixing [#87](https://github.com/brandonarrindell/homebridge-envisalink/issues/87),
+  and keep panel passwords out of debug logs.
 - v2.0.2 (2026-09-30) - Fix scoped plugin registration and verify legacy cache
   migration. Thanks to Marc Kagan for [PR #75](https://github.com/brandonarrindell/homebridge-envisalink/pull/75).
 - v2.0.1 (2026-09-30) - Missing-name fallbacks, valid HomeKit names and cached

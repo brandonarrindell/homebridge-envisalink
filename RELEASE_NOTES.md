@@ -1,4 +1,4 @@
-# Unreleased
+# 2.0.3 — 2026-11-17
 
 ## Fixed
 
@@ -10,6 +10,15 @@
 - Stop writing the EnvisaLink and proxy passwords to the Homebridge debug log.
   TPI login packets are now masked in log output; what is sent to the panel is
   unchanged.
+
+## Upgrading and verification
+
+No configuration, cache or HomeKit changes are needed. Updating with npm 12 no
+longer requires `--allow-remote=all`. Lint, all 41 active unit tests and the 8
+simulated-panel E2E scenarios pass on Homebridge 1.11.4 and 2.4.0, and CI covers
+Node 22/24 and Homebridge 1.6.0. A clean `npm install --allow-remote=root` with
+npm 12.2.2 succeeds. Physical alarm hardware remains outside the simulated test
+scope.
 
 # 2.0.2 — 2026-09-30
 
