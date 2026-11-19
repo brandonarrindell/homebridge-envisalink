@@ -93,7 +93,10 @@ exports.initConfig = function (initconfig) {
 				}
 			});
 
-			c.write('505300');
+			// homebridge-envisalink change: the prompt must be a TPI
+			// frame with its checksum and CRLF, like the panel sends.
+			// A bare '505300' write made proxy clients time out (#90).
+			sendcommand(c, '5053');
 			c.pipe(c);
 		});
 		server.listen(config.serverport, config.serverhost, function () { //'listening' listener

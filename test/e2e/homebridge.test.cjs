@@ -63,6 +63,35 @@ async function freePort(excluded = []) {
   throw new Error('Cannot find an available isolated HAP port');
 }
 
+function proxyHandshake(port) {
+  // A proxy client (e.g. Home Assistant EyezOn) must receive the DSC
+  // login prompt as a checksummed frame; a bare ``505300`` write leaves
+  // it waiting for a line it can parse (issue #90).
+  return new Promise((resolve, reject) => {
+    const socket = net.connect({ host: '127.0.0.1', port });
+    const packets = [];
+    let buffer = '';
+    const timer = setTimeout(() => finish(new Error('proxy handshake timed out')), 5000);
+    function finish(error, value) {
+      clearTimeout(timer);
+      socket.destroy();
+      if (error) reject(error);
+      else resolve(value);
+    }
+    socket.on('error', finish);
+    socket.on('data', data => {
+      buffer += data.toString('ascii');
+      let boundary;
+      while ((boundary = buffer.indexOf('\r\n')) !== -1) {
+        packets.push(buffer.slice(0, boundary + 2));
+        buffer = buffer.slice(boundary + 2);
+        if (packets.length === 1) socket.write(frame('005user'));
+        else finish(undefined, packets);
+      }
+    });
+  });
+}
+
 function homebridgeBinary() {
   if (process.env.HOMEBRIDGE_BIN) return path.resolve(process.env.HOMEBRIDGE_BIN);
   // Homebridge 2 exports its entrypoint but intentionally not package.json.
@@ -236,7 +265,8 @@ test('real Homebridge + DSC TCP + HAP: controls, persisted cache reconciliation,
   await fs.access(path.join(ROOT, 'dist/index.js')); // Run npm run build first.
   const storage = await fs.mkdtemp(path.join(os.tmpdir(), 'envisalink-e2e-'));
   const panel = await new DscSimulator().start();
-  const bridge = new HomebridgeHarness(storage, await freePort(), panel);
+  const proxyPort = await freePort();
+  const bridge = new HomebridgeHarness(storage, await freePort(), panel, { platform: { proxyPort } });
   const initialCommands = [{ name: 'Output One', command: '02011' }, { name: 'Output Two', command: '02012' }];
   let passed = false;
 
@@ -260,6 +290,10 @@ test('real Homebridge + DSC TCP + HAP: controls, persisted cache reconciliation,
     assert.ok(panel.commands.some(item => item.body === '005user'));
     assert.ok(panel.commands.some(item => item.body === '001'));
     t.diagnostic('PASS: real Homebridge plugin startup, DSC authentication, initial batched status report');
+
+    const proxyPackets = await until('proxy login prompt', () => proxyHandshake(proxyPort));
+    assert.deepEqual(proxyPackets, ['5053CD\r\n', '5051CB\r\n']);
+    t.diagnostic('PASS: proxy client receives the checksummed 5053 prompt and authenticates (#90)');
 
     for (const [zone, partition, type] of [[1, 1, 'contact'], [2, 1, 'motion'], [3, 2, 'smoke'], [4, 2, 'leak'], [7, 2, 'contact']]) {
       const id = bridge.characteristic(await bridge.bySerial(`Partition ${partition} Zone ${zone}`), TYPES[type]);
